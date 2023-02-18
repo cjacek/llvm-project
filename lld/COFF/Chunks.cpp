@@ -629,6 +629,8 @@ static int getRuntimePseudoRelocSize(uint16_t type,
       return 0;
     }
   case ARM64:
+  case ARM64EC:
+  case ARM64X:
     switch (type) {
     case IMAGE_REL_ARM64_ADDR64:
       return 64;
