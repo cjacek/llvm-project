@@ -49,6 +49,10 @@ PATCH-CHPE-NEXT:  CodeRangesToEntryPoints [
 PATCH-CHPE-NEXT:    0x2000 - 0x2010 -> 0x2000
 PATCH-CHPE-NEXT:    0x2010 - 0x2020 -> 0x2010
 PATCH-CHPE-NEXT:  ]
+PATCH-CHPE-NEXT:  RedirectionMetadata [
+PATCH-CHPE-NEXT:    0x2000 -> 0x1000
+PATCH-CHPE-NEXT:    0x2010 -> 0x100C
+PATCH-CHPE-NEXT:  ]
 
 
 RUN: lld-link -out:test.dll -machine:arm64ec arm64ec-alias.obj loadconfig-arm64ec.obj \
