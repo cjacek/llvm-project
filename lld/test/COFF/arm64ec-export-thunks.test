@@ -61,6 +61,10 @@ EXP-CHPE-NEXT:  CodeRangesToEntryPoints [
 EXP-CHPE-NEXT:    0x3000 - 0x3010 -> 0x3000
 EXP-CHPE-NEXT:    0x3010 - 0x3020 -> 0x3010
 EXP-CHPE-NEXT:  ]
+EXP-CHPE-NEXT:  RedirectionMetadata [
+EXP-CHPE-NEXT:    0x3000 -> 0x1000
+EXP-CHPE-NEXT:    0x3010 -> 0x1000
+EXP-CHPE-NEXT:  ]
 
 RUN: llvm-objdump -s --section=.test exports.dll | FileCheck --check-prefix=EXP-DATA %s
 EXP-DATA: 180006000 10300000 00300000
@@ -105,6 +109,9 @@ ENTRY-CHPE-NEXT:    0x2000 - 0x2010  X64
 ENTRY-CHPE-NEXT:  ]
 ENTRY-CHPE-NEXT:  CodeRangesToEntryPoints [
 ENTRY-CHPE-NEXT:    0x2000 - 0x2010 -> 0x2000
+ENTRY-CHPE-NEXT:  ]
+ENTRY-CHPE-NEXT:  RedirectionMetadata [
+ENTRY-CHPE-NEXT:    0x2000 -> 0x1000
 ENTRY-CHPE-NEXT:  ]
 
 
