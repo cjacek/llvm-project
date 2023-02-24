@@ -33,6 +33,10 @@ PATCH-CHPE:       CodeMap [
 PATCH-CHPE-NEXT:    0x1000 - 0x1008  ARM64EC
 PATCH-CHPE-NEXT:    0x2000 - 0x2010  X64
 PATCH-CHPE-NEXT:  ]
+PATCH-CHPE-NEXT:  CodeRangesToEntryPoints: 0
+PATCH-CHPE-NEXT:  RedirectionMetadata [
+PATCH-CHPE-NEXT:    0x2000 -> 0x1000
+PATCH-CHPE-NEXT:  ]
 
 
 RUN: lld-link -out:test2.dll -machine:arm64ec arm64ec-alias.obj loadconfig-arm64ec.obj -dll -noentry

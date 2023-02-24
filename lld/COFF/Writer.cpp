@@ -2048,16 +2048,40 @@ void Writer::maybeAddRVATable(SymbolRVASet tableSymbols, StringRef tableSym,
 
 // Create CHPE metadata chunks.
 void Writer::createECChunks() {
-  for (auto it : ctx.ECThunks) {
-    if (auto thunk = dyn_cast<ECThunkChunk>(it.first))
+  ctx.symtab.forEachSymbol([&](Symbol *s) {
+    auto sym = dyn_cast<Defined>(s);
+    if (!sym || !sym->getName().starts_with("EXP+"))
+      return;
+    if (sym->getChunk()->getMachine() != AMD64)
+      return;
+    if (auto thunk = dyn_cast<ECThunkChunk>(sym->getChunk())) {
       hexpthkSec->addChunk(thunk);
-  }
+      ctx.ECThunks.push_back({thunk, thunk->target});
+    } else if (auto def = dyn_cast<DefinedRegular>(sym)) {
+      if (def->getValue() || !def->getChunk()->isCOMDAT()) {
+        warn(def->getName() + " is not a COMDAT symbol");
+        return;
+      }
+      Defined *t = dyn_cast_or_null<Defined>(ctx.symtab.find(
+          toString(sym->getName().substr(strlen("EXP+")) + "$hp_target")));
+      if (!t || !isArm64EC(t->getChunk()->getMachine()))
+        return;
+      ctx.ECThunks.push_back({sym->getChunk(), t});
+    }
+  });
 
   auto codeMapChunk = make<ECCodeMapChunk>(codeMap);
   rdataSec->addChunk(codeMapChunk);
   Symbol *codeMapSym = ctx.symtab.findUnderscore("__hybrid_code_map");
   replaceSymbol<DefinedSynthetic>(codeMapSym, codeMapSym->getName(),
                                   codeMapChunk);
+
+  ECEntryPointsChunk *entryPoints = make<ECEntryPointsChunk>(ctx);
+  rdataSec->addChunk(entryPoints);
+  Symbol *entryPointsSym =
+      ctx.symtab.findUnderscore("__arm64x_redirection_metadata");
+  replaceSymbol<DefinedSynthetic>(entryPointsSym, entryPointsSym->getName(),
+                                  entryPoints);
 }
 
 // MinGW specific. Gather all relocations that are imported from a DLL even
@@ -2150,6 +2174,11 @@ void Writer::setECSymbols() {
   if (!isArm64EC(ctx.config.machine))
     return;
 
+  llvm::stable_sort(ctx.ECThunks, [](const std::pair<Chunk *, Defined *> &a,
+                                     const std::pair<Chunk *, Defined *> &b) {
+    return a.first->getRVA() < b.first->getRVA();
+  });
+
   Symbol *rfeTableSym = ctx.symtab.findUnderscore("__arm64x_extra_rfe_table");
   replaceSymbol<DefinedSynthetic>(rfeTableSym, "__arm64x_extra_rfe_table",
                                   pdata.first);
@@ -2161,6 +2190,10 @@ void Writer::setECSymbols() {
         ->setVA(pdata.last->getRVA() + pdata.last->getSize() -
                 pdata.first->getRVA());
   }
+
+  Symbol *entryPointCountSym =
+      ctx.symtab.findUnderscore("__arm64x_redirection_metadata_count");
+  cast<DefinedAbsolute>(entryPointCountSym)->setVA(ctx.ECThunks.size());
 }
 
 // Write section contents to a mmap'ed file.
