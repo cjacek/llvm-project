@@ -501,7 +501,6 @@ void SymbolTable::resolveRemainingUndefines() {
       }
 
       auto thunk = make<ECThunkChunk>(ctx, cast<DefinedRegular>(targetSym));
-      ctx.ECThunks.push_back({thunk, thunk->target});
       replaceSymbol<DefinedSynthetic>(undef, name, thunk);
     }
   }
