@@ -1089,4 +1089,18 @@ void ECCodeRangesChunk::writeTo(uint8_t *buf) const {
   }
 }
 
+size_t ECEntryPointsChunk::getSize() const {
+  return ctx.ECThunks.size() * sizeof(chpe_redirection_entry);
+}
+
+void ECEntryPointsChunk::writeTo(uint8_t *buf) const {
+  auto entries = reinterpret_cast<chpe_redirection_entry *>(buf);
+
+  for (uint32_t i = 0; i < ctx.ECThunks.size(); i++) {
+    ECThunkChunk *thunk = ctx.ECThunks[i];
+    entries[i].Source = thunk->getRVA();
+    entries[i].Destination = thunk->target->getRVA();
+  }
+}
+
 } // namespace lld::coff
