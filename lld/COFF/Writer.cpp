@@ -2072,6 +2072,13 @@ void Writer::createECChunks() {
   Symbol *rangesSym =
       ctx.symtab.findUnderscore("__x64_code_ranges_to_entry_points");
   replaceSymbol<DefinedSynthetic>(rangesSym, rangesSym->getName(), ranges);
+
+  ECEntryPointsChunk *entryPoints = make<ECEntryPointsChunk>(ctx);
+  rdataSec->addChunk(entryPoints);
+  Symbol *entryPointsSym =
+      ctx.symtab.findUnderscore("__arm64x_redirection_metadata");
+  replaceSymbol<DefinedSynthetic>(entryPointsSym, entryPointsSym->getName(),
+                                  entryPoints);
 }
 
 // MinGW specific. Gather all relocations that are imported from a DLL even
@@ -2167,6 +2174,10 @@ void Writer::setECSymbols() {
   Symbol *rangesCountSym =
       ctx.symtab.findUnderscore("__x64_code_ranges_to_entry_points_count");
   cast<DefinedAbsolute>(rangesCountSym)->setVA(ctx.ECThunks.size());
+
+  Symbol *entryPointCountSym =
+      ctx.symtab.findUnderscore("__arm64x_redirection_metadata_count");
+  cast<DefinedAbsolute>(entryPointCountSym)->setVA(ctx.ECThunks.size());
 }
 
 // Write section contents to a mmap'ed file.
