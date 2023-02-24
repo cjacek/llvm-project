@@ -31,12 +31,12 @@
 ; EXP-NEXT: Export {
 ; EXP-NEXT:   Ordinal: 4
 ; EXP-NEXT:   Name: exportas_func
-; EXP-NEXT:   RVA: 0x2020
+; EXP-NEXT:   RVA: 0x2010
 ; EXP-NEXT: }
 ; EXP-NEXT: Export {
 ; EXP-NEXT:   Ordinal: 5
 ; EXP-NEXT:   Name: mangled_func
-; EXP-NEXT:   RVA: 0x2010
+; EXP-NEXT:   RVA: 0x2020
 ; EXP-NEXT: }
 ; EXP-NEXT: Export {
 ; EXP-NEXT:   Ordinal: 6

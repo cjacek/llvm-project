@@ -1078,4 +1078,19 @@ void ECThunkChunk::writeTo(uint8_t *buf) const {
   write32le(buf + 10, target->getRVA() - rva - 14);
 }
 
+size_t ECEntryPointsChunk::getSize() const {
+  return ctx.ECThunks.size() * sizeof(chpe_redirection_entry);
+}
+
+void ECEntryPointsChunk::writeTo(uint8_t *buf) const {
+  auto entries = reinterpret_cast<chpe_redirection_entry *>(buf);
+
+  for (uint32_t i = 0; i < ctx.ECThunks.size(); i++) {
+    Chunk *thunk = ctx.ECThunks[i].first;
+    Defined *target = ctx.ECThunks[i].second;
+    entries[i].Source = thunk->getRVA();
+    entries[i].Destination = target->getRVA();
+  }
+}
+
 } // namespace lld::coff
