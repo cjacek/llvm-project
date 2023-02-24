@@ -55,6 +55,8 @@ public:
     return c->osidx == 0 ? nullptr : outputSections[c->osidx - 1];
   }
 
+  std::vector<std::pair<Chunk *, Defined *>> ECThunks;
+
   // Fake sections for parsing bitcode files.
   FakeSection ltoTextSection;
   FakeSection ltoDataSection;
