@@ -749,6 +749,16 @@ private:
   std::vector<ECCodeMapEntry> &map;
 };
 
+class ECEntryPointsChunk : public NonSectionChunk {
+public:
+  ECEntryPointsChunk(COFFLinkerContext &ctx) : ctx(ctx) {}
+  size_t getSize() const override;
+  void writeTo(uint8_t *buf) const override;
+
+private:
+  COFFLinkerContext &ctx;
+};
+
 static const uint8_t ecThunkCode[] = {
     0x48, 0x8b, 0xc4,          // movq    %rsp, %rax
     0x48, 0x89, 0x58, 0x20,    // movq    %rbx, 0x20(%rax)

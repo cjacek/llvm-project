@@ -57,6 +57,11 @@ EXP-CHPE:       CodeMap [
 EXP-CHPE-NEXT:    0x1000 - 0x100C  ARM64EC
 EXP-CHPE-NEXT:    0x2000 - 0x3020  X64
 EXP-CHPE-NEXT:  ]
+EXP-CHPE-NEXT:  CodeRangesToEntryPoints: 0
+EXP-CHPE-NEXT:  RedirectionMetadata [
+EXP-CHPE-NEXT:    0x3000 -> 0x1000
+EXP-CHPE-NEXT:    0x3010 -> 0x1000
+EXP-CHPE-NEXT:  ]
 
 RUN: llvm-objdump -s --section=.test exports.dll | FileCheck --check-prefix=EXP-DATA %s
 EXP-DATA: 180006000 10300000 00300000
@@ -98,6 +103,10 @@ RUN: llvm-readobj --coff-load-config entry.dll | FileCheck -check-prefix=ENTRY-C
 ENTRY-CHPE:       CodeMap [
 ENTRY-CHPE-NEXT:    0x1000 - 0x100C  ARM64EC
 ENTRY-CHPE-NEXT:    0x2000 - 0x2010  X64
+ENTRY-CHPE-NEXT:  ]
+ENTRY-CHPE-NEXT:  CodeRangesToEntryPoints: 0
+ENTRY-CHPE-NEXT:  RedirectionMetadata [
+ENTRY-CHPE-NEXT:    0x2000 -> 0x1000
 ENTRY-CHPE-NEXT:  ]
 
 
