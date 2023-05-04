@@ -92,7 +92,7 @@ RUN:          codemap3.obj loadconfig-arm64ec.obj -dll -noentry -merge:test=.tex
 RUN: llvm-readobj --coff-load-config testm.dll | FileCheck -check-prefix=CODEMAPM %s
 CODEMAPM:      CodeMap [
 CODEMAPM-NEXT:   0x1000 - 0x1010  ARM64EC
-CODEMAPM-NEXT:   0x2000 - 0x3004  X64
+CODEMAPM-NEXT:   0x2000 - 0x200E  X64
 CODEMAPM-NEXT: ]
 
 RUN: llvm-objdump -d testm.dll | FileCheck -check-prefix=DISASMM %s
@@ -106,9 +106,9 @@ DISASMM-NEXT: 18000100c: d65f03c0     ret
 DISASMM-NEXT:                 ...
 DISASMM-NEXT: 180002000: b8 03 00 00 00               movl    $0x3, %eax
 DISASMM-NEXT: 180002005: c3                           retq
-DISASMM-NEXT:                 ...
-DISASMM-NEXT: 180002ffe: 00 00                        addb    %al, (%rax)
-DISASMM-NEXT: 180003000: b8 06 00 00 00               movl    $0x6, %eax
+DISASMM-NEXT: 180002006: 00 00                        addb    %al, (%rax)
+DISASMM-NEXT: 180002008: b8 06 00 00 00               movl    $0x6, %eax
+DISASMM-NEXT: 18000200d: c3                           retq
 
 #--- arm64-func-sym.s
     .text
@@ -121,7 +121,7 @@ arm64_func_sym:
 #--- arm64ec-func-sym.s
     .text
     .globl arm64ec_func_sym
-    .p2align 12, 0x0
+    .p2align 2, 0x0
 arm64ec_func_sym:
     mov w0, #2
     ret
@@ -136,14 +136,14 @@ arm64ec_func_sym2:
 #--- x86_64-func-sym.s
     .text
     .globl x86_64_func_sym
-    .p2align 12, 0x0
+    .p2align 2, 0x0
 x86_64_func_sym:
     movl $3, %eax
     retq
 
     .section test, "xr"
     .globl x86_64_func_sym2
-    .p2align 12, 0x0
+    .p2align 2, 0x0
 x86_64_func_sym2:
     movl $6, %eax
     retq
@@ -189,7 +189,7 @@ code_map:
     .rva arm64ec_func_sym + 1
     .word 16
     .rva x86_64_func_sym + 2
-    .word 0x1004
+    .word 14
 
     .globl code_map_count
 code_map_count = 2

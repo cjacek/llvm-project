@@ -1392,8 +1392,19 @@ void Writer::assignAddresses() {
     // If /FUNCTIONPADMIN is used, functions are padded in order to create a
     // hotpatchable image.
     uint32_t padding = sec->isCodeSection() ? config->functionPadMin : 0;
+    MachineTypes prevECMachine = IMAGE_FILE_MACHINE_UNKNOWN;
 
     for (Chunk *c : sec->chunks) {
+      if (COFF::isArm64EC(ctx.config.machine) && sec->isCodeSection()) {
+        MachineTypes machine = c->getMachine();
+        if (machine != IMAGE_FILE_MACHINE_UNKNOWN) {
+          // We need additional alignment when crossing EC range baudaries.
+          if (prevECMachine != IMAGE_FILE_MACHINE_UNKNOWN &&
+              machine != prevECMachine)
+            virtualSize = alignTo(virtualSize, 4096);
+          prevECMachine = machine;
+        }
+      }
       if (padding && c->isHotPatchable())
         virtualSize += padding;
       virtualSize = alignTo(virtualSize, c->getAlignment());
