@@ -46,8 +46,8 @@ __os_arm64x_dispatch_fptr:
         .p2align 2, 0
 __chpe_metadata:
         .word 1
-        .rva code_map
-        .word code_map_count
+        .rva __hybrid_code_map
+        .word __hybrid_code_map_count
         .word 0 // __x64_code_ranges_to_entry_points
         .word 0 //__arm64x_redirection_metadata
         .rva __os_arm64x_dispatch_call_no_redirect

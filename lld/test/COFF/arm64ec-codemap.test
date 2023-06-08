@@ -3,16 +3,15 @@ RUN: split-file %s %t.dir && cd %t.dir
 
 RUN: llvm-mc -filetype=obj -triple=arm64-windows arm64-func-sym.s -o arm64-func-sym.obj
 RUN: llvm-mc -filetype=obj -triple=arm64ec-windows arm64ec-func-sym.s -o arm64ec-func-sym.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows empty-sec.s -o arm64ec-empty-sec.obj
 RUN: llvm-mc -filetype=obj -triple=x86_64-windows x86_64-func-sym.s -o x86_64-func-sym.obj
-RUN: llvm-mc -filetype=obj -triple=arm64ec-windows codemap.s -o codemap.obj
-RUN: llvm-mc -filetype=obj -triple=arm64ec-windows codemap2.s -o codemap2.obj
-RUN: llvm-mc -filetype=obj -triple=arm64ec-windows codemap3.s -o codemap3.obj
+RUN: llvm-mc -filetype=obj -triple=x86_64-windows empty-sec.s -o x86_64-empty-sec.obj
 RUN: llvm-mc -filetype=obj -triple=arm64ec-windows %S/Inputs/loadconfig-arm64ec.s -o loadconfig-arm64ec.obj
 
 Link ARM64EC DLL and verify that the code is arranged as expected.
 
 RUN: lld-link -out:test.dll -machine:arm64ec arm64ec-func-sym.obj x86_64-func-sym.obj \
-RUN:          codemap.obj loadconfig-arm64ec.obj -dll -noentry
+RUN:          loadconfig-arm64ec.obj -dll -noentry
 
 RUN: llvm-readobj --coff-load-config test.dll | FileCheck -check-prefix=CODEMAP %s
 CODEMAP:       CodeMap [
@@ -44,12 +43,18 @@ DISASM-NEXT: 180006005: c3                           retq
 Order of arguments doesn't matter in this case, chunks are sorted by target type anyway.
 
 RUN: lld-link -out:test2.dll -machine:arm64ec x86_64-func-sym.obj arm64ec-func-sym.obj \
-RUN:          codemap.obj loadconfig-arm64ec.obj -dll -noentry
+RUN:          loadconfig-arm64ec.obj -dll -noentry
 RUN: llvm-readobj --coff-load-config test2.dll | FileCheck -check-prefix=CODEMAP %s
 RUN: llvm-objdump -d test2.dll | FileCheck -check-prefix=DISASM %s
 
 RUN: lld-link -out:testx.dll -machine:arm64x arm64-func-sym.obj arm64ec-func-sym.obj \
-RUN:          x86_64-func-sym.obj codemap2.obj loadconfig-arm64ec.obj -dll -noentry
+RUN:          x86_64-func-sym.obj loadconfig-arm64ec.obj -dll -noentry
+
+Adding empty chunks does not affect code map ranges.
+
+RUN: lld-link -out:test3.dll -machine:arm64ec x86_64-empty-sec.obj arm64ec-empty-sec.obj \
+RUN:          arm64ec-func-sym.obj  x86_64-func-sym.obj loadconfig-arm64ec.obj -dll -noentry
+RUN: llvm-readobj --coff-load-config test3.dll | FileCheck -check-prefix=CODEMAP %s
 
 Do the same with ARM64X target.
 
@@ -87,7 +92,7 @@ DISASMX-NEXT: 180007005: c3                           retq
 Test merged sections.
 
 RUN: lld-link -out:testm.dll -machine:arm64ec arm64ec-func-sym.obj x86_64-func-sym.obj \
-RUN:          codemap3.obj loadconfig-arm64ec.obj -dll -noentry -merge:test=.text
+RUN:          loadconfig-arm64ec.obj -dll -noentry -merge:test=.text
 
 RUN: llvm-readobj --coff-load-config testm.dll | FileCheck -check-prefix=CODEMAPM %s
 CODEMAPM:      CodeMap [
@@ -148,48 +153,7 @@ x86_64_func_sym2:
     movl $6, %eax
     retq
 
-#--- codemap.s
-    .section .rdata,"dr"
-    .globl code_map
-code_map:
-    .rva arm64ec_func_sym + 1
-    .word 8
-    .rva x86_64_func_sym + 2
-    .word 6
-    .rva arm64ec_func_sym2 + 1
-    .word 8
-    .rva x86_64_func_sym2 + 2
-    .word 6
-
-    .globl code_map_count
-code_map_count = 4
-
-#--- codemap2.s
-    .section .rdata,"dr"
-    .globl code_map
-code_map:
-    .rva arm64_func_sym
-    .word 8
-    .rva arm64ec_func_sym + 1
-    .word 8
-    .rva x86_64_func_sym + 2
-    .word 6
-    .rva arm64ec_func_sym2 + 1
-    .word 8
-    .rva x86_64_func_sym2 + 2
-    .word 6
-
-    .globl code_map_count
-code_map_count = 5
-
-#--- codemap3.s
-    .section .rdata,"dr"
-    .globl code_map
-code_map:
-    .rva arm64ec_func_sym + 1
-    .word 16
-    .rva x86_64_func_sym + 2
-    .word 14
-
-    .globl code_map_count
-code_map_count = 2
+#--- empty-sec.s
+    .section .empty1, "xr"
+    .section .empty2, "xr"
+    .section .empty3, "xr"
