@@ -242,11 +242,13 @@ private:
   void maybeAddRVATable(SymbolRVASet tableSymbols, StringRef tableSym,
                         StringRef countSym, bool hasFlag=false);
   void setSectionPermissions();
+  void setECSymbols();
   void writeSections();
   void writeBuildId();
   void writePEChecksum();
   void sortSections();
-  void sortExceptionTable();
+  template <typename T> void sortExceptionTable(Chunk *first, Chunk *last);
+  void sortExceptionTables();
   void sortCRTSectionChunks(std::vector<Chunk *> &chunks);
   void addSyntheticIdata();
   void sortBySectionOrder(std::vector<Chunk *> &chunks);
@@ -319,6 +321,8 @@ private:
   // files, so we need to keep track of them separately.
   Chunk *firstPdata = nullptr;
   Chunk *lastPdata;
+  Chunk *firstECPdata = nullptr;
+  Chunk *lastECPdata;
 
   COFFLinkerContext &ctx;
 };
@@ -718,6 +722,7 @@ void Writer::run() {
   removeEmptySections();
   assignOutputSectionIndices();
   setSectionPermissions();
+  setECSymbols();
   createSymbolAndStringTable();
 
   if (fileSize > UINT32_MAX)
@@ -732,7 +737,7 @@ void Writer::run() {
   }
   writeSections();
   checkLoadConfig();
-  sortExceptionTable();
+  sortExceptionTables();
 
   // Fix up the alignment in the TLS Directory's characteristic field,
   // if a specific alignment value is needed
@@ -1378,8 +1383,26 @@ void Writer::createSymbolAndStringTable() {
 
 void Writer::mergeSections() {
   if (!pdataSec->chunks.empty()) {
-    firstPdata = pdataSec->chunks.front();
-    lastPdata = pdataSec->chunks.back();
+    if (isArm64EC(ctx.config.machine)) {
+      llvm::stable_sort(pdataSec->chunks, [=](const Chunk *a, const Chunk *b) {
+        return (a->getMachine() == AMD64) < (b->getMachine() == AMD64);
+      });
+
+      for (auto chunk : pdataSec->chunks) {
+        if (chunk->getMachine() == AMD64) {
+          firstECPdata = chunk;
+          lastECPdata = pdataSec->chunks.back();
+          break;
+        }
+
+        if (!firstPdata)
+          firstPdata = chunk;
+        lastPdata = chunk;
+      }
+    } else {
+      firstPdata = pdataSec->chunks.front();
+      lastPdata = pdataSec->chunks.back();
+    }
   }
 
   for (auto &p : ctx.config.merge) {
@@ -1633,7 +1656,14 @@ template <typename PEHeaderTy> void Writer::writeHeader() {
     dir[RESOURCE_TABLE].RelativeVirtualAddress = rsrcSec->getRVA();
     dir[RESOURCE_TABLE].Size = rsrcSec->getVirtualSize();
   }
-  if (firstPdata) {
+  if (ctx.config.machine == ARM64EC) {
+    if (firstECPdata) {
+      dir[EXCEPTION_TABLE].RelativeVirtualAddress = firstECPdata->getRVA();
+      dir[EXCEPTION_TABLE].Size = lastECPdata->getRVA() +
+                                  lastECPdata->getSize() -
+                                  firstECPdata->getRVA();
+    }
+  } else if (firstPdata) {
     dir[EXCEPTION_TABLE].RelativeVirtualAddress = firstPdata->getRVA();
     dir[EXCEPTION_TABLE].Size =
         lastPdata->getRVA() + lastPdata->getSize() - firstPdata->getRVA();
@@ -2048,6 +2078,23 @@ void Writer::setSectionPermissions() {
   }
 }
 
+void Writer::setECSymbols() {
+  if (!COFF::isArm64EC(ctx.config.machine))
+    return;
+
+  Symbol *rfeTableSym = ctx.symtab.findUnderscore("__arm64x_extra_rfe_table");
+  replaceSymbol<DefinedSynthetic>(rfeTableSym, "__arm64x_extra_rfe_table",
+                                  firstPdata);
+
+  if (firstPdata) {
+    Symbol *rfeSizeSym =
+        ctx.symtab.findUnderscore("__arm64x_extra_rfe_table_size");
+    cast<DefinedAbsolute>(rfeSizeSym)
+        ->setVA(lastPdata->getRVA() + lastPdata->getSize() -
+                firstPdata->getRVA());
+  }
+}
+
 // Write section contents to a mmap'ed file.
 void Writer::writeSections() {
   uint8_t *buf = buffer->getBufferStart();
@@ -2118,41 +2165,51 @@ void Writer::writeBuildId() {
   coffHeader->TimeDateStamp = timestamp;
 }
 
-// Sort .pdata section contents according to PE/COFF spec 5.5.
-void Writer::sortExceptionTable() {
-  if (!firstPdata)
+template <typename T>
+void Writer::sortExceptionTable(Chunk *first, Chunk *last) {
+  if (!first)
     return;
+
   // We assume .pdata contains function table entries only.
   auto bufAddr = [&](Chunk *c) {
     OutputSection *os = ctx.getOutputSection(c);
     return buffer->getBufferStart() + os->getFileOff() + c->getRVA() -
            os->getRVA();
   };
-  uint8_t *begin = bufAddr(firstPdata);
-  uint8_t *end = bufAddr(lastPdata) + lastPdata->getSize();
+
+  uint8_t *begin = bufAddr(first);
+  uint8_t *end = bufAddr(last) + last->getSize();
+
+  if ((end - begin) % sizeof(T) != 0) {
+    fatal("unexpected .pdata size: " + Twine(end - begin) +
+          " is not a multiple of " + Twine(sizeof(T)));
+  }
+
+  parallelSort(MutableArrayRef<T>((T *)begin, (T *)end),
+               [](const T &a, const T &b) { return a.begin < b.begin; });
+}
+
+// Sort .pdata section contents according to PE/COFF spec 5.5.
+void Writer::sortExceptionTables() {
+  struct EntryX64 {
+    ulittle32_t begin, end, unwind;
+  };
+  struct EntryArm {
+    ulittle32_t begin, unwind;
+  };
+
   if (ctx.config.machine == AMD64) {
-    struct Entry { ulittle32_t begin, end, unwind; };
-    if ((end - begin) % sizeof(Entry) != 0) {
-      fatal("unexpected .pdata size: " + Twine(end - begin) +
-            " is not a multiple of " + Twine(sizeof(Entry)));
-    }
-    parallelSort(
-        MutableArrayRef<Entry>((Entry *)begin, (Entry *)end),
-        [](const Entry &a, const Entry &b) { return a.begin < b.begin; });
+    sortExceptionTable<EntryX64>(firstPdata, lastPdata);
     return;
   }
-  if (ctx.config.machine == ARMNT || ctx.config.machine == ARM64) {
-    struct Entry { ulittle32_t begin, unwind; };
-    if ((end - begin) % sizeof(Entry) != 0) {
-      fatal("unexpected .pdata size: " + Twine(end - begin) +
-            " is not a multiple of " + Twine(sizeof(Entry)));
-    }
-    parallelSort(
-        MutableArrayRef<Entry>((Entry *)begin, (Entry *)end),
-        [](const Entry &a, const Entry &b) { return a.begin < b.begin; });
+  if (COFF::isArm64EC(ctx.config.machine))
+    sortExceptionTable<EntryX64>(firstECPdata, lastECPdata);
+  if (ctx.config.machine == ARMNT || COFF::isAnyArm64(ctx.config.machine)) {
+    sortExceptionTable<EntryArm>(firstPdata, lastPdata);
     return;
   }
-  lld::errs() << "warning: don't know how to handle .pdata.\n";
+  if (firstPdata)
+    lld::errs() << "warning: don't know how to handle .pdata.\n";
 }
 
 // The CRT section contains, among other things, the array of function
