@@ -2450,6 +2450,7 @@ void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
     ctx.symtab.addAbsolute("__arm64x_native_entrypoint", 0);
     ctx.symtab.addAbsolute("__arm64x_redirection_metadata", 0);
     ctx.symtab.addAbsolute("__arm64x_redirection_metadata_count", 0);
+    ctx.symtab.addAbsolute("__guard_check_icall_a64n_fptr", 0);
     ctx.symtab.addAbsolute("__hybrid_auxiliary_iat", 0);
     ctx.symtab.addAbsolute("__hybrid_auxiliary_iat_copy", 0);
     ctx.symtab.addAbsolute("__hybrid_code_map", 0);
