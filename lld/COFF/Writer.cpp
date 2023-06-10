@@ -2306,6 +2306,9 @@ void Writer::setECSymbols() {
   replaceSymbol<DefinedSynthetic>(
       iatCopySym, "__hybrid_auxiliary_iat_copy",
       idata.auxIatCopy.empty() ? nullptr : idata.auxIatCopy.front());
+
+  Symbol *sym = ctx.symtab.findUnderscore("__arm64x_native_entrypoint");
+  cast<DefinedAbsolute>(sym)->setVA(ctx.config.imageBase);
 }
 
 // Write section contents to a mmap'ed file.
