@@ -1735,6 +1735,8 @@ static uint32_t getSecrelReloc(llvm::COFF::MachineTypes machine) {
   case ARMNT:
     return COFF::IMAGE_REL_ARM_SECREL;
   case ARM64:
+  case ARM64EC:
+  case ARM64X:
     return COFF::IMAGE_REL_ARM64_SECREL;
   default:
     llvm_unreachable("unknown machine type");
