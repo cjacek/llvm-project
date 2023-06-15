@@ -1948,6 +1948,9 @@ void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
     parseMerge(".CRT=.rdata");
   }
 
+  if (isArm64EC(config->machine))
+    parseMerge(".wowthk=.text");
+
   // Handle /section
   for (auto *arg : args.filtered(OPT_section))
     parseSection(arg->getValue());
