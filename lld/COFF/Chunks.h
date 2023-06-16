@@ -749,6 +749,27 @@ private:
   std::vector<ECCodeMapEntry> &map;
 };
 
+static const uint8_t ecThunkCode[] = {
+    0x48, 0x8b, 0xc4,          // movq    %rsp, %rax
+    0x48, 0x89, 0x58, 0x20,    // movq    %rbx, 0x20(%rax)
+    0x55,                      // pushq   %rbp
+    0x5d,                      // popq    %rbp
+    0xe9, 0,    0,    0,    0, // jmp *0x0
+    0xcc,                      // int3
+    0xcc                       // int3
+};
+
+class ECThunkChunk : public NonSectionCodeChunk {
+public:
+  explicit ECThunkChunk(COFFLinkerContext &ctx, DefinedRegular *targetSym)
+      : target(targetSym) {}
+  size_t getSize() const override { return sizeof(ecThunkCode); };
+  void writeTo(uint8_t *buf) const override;
+  MachineTypes getMachine() const override { return AMD64; }
+
+  DefinedRegular *target;
+};
+
 // MinGW specific, for the "automatic import of variables from DLLs" feature.
 // This provides the table of runtime pseudo relocations, for variable
 // references that turned out to need to be imported from a DLL even though
