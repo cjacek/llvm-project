@@ -1337,6 +1337,27 @@ void LinkerDriver::convertResources() {
   f->includeResourceChunks();
 }
 
+void LinkerDriver::maybeMakeECThunk(StringRef name, Symbol *&sym) {
+  DefinedRegular *def;
+  if (!sym)
+    return;
+  if (!(def = dyn_cast<DefinedRegular>(sym))) {
+    if (!isa<Undefined>(sym))
+      return;
+    auto alias = cast<Undefined>(sym)->getWeakAlias();
+    if (!alias || !(def = dyn_cast<DefinedRegular>(alias)))
+      return;
+  }
+
+  SectionChunk *chunk = def->getChunk();
+  if (chunk->getArm64ECRangeType() != chpe_range_type::Arm64EC)
+    return;
+  sym = addUndefined(saver().save("EXP+#" + name));
+  if (isa<Undefined>(sym))
+    replaceSymbol<DefinedSynthetic>(sym, sym->getName(),
+                                    make<ECThunkChunk>(ctx, def));
+}
+
 // In MinGW, if no symbols are chosen to be exported, then all symbols are
 // automatically exported by default. This behavior can be forced by the
 // -export-all-symbols option, so that it happens even when exports are
@@ -2525,6 +2546,17 @@ void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
   // Apply symbol renames for -wrap.
   if (!wrapped.empty())
     wrapSymbols(ctx, wrapped);
+
+  if (ctx.config.machine == ARM64EC) {
+    if (ctx.config.entry)
+      ctx.driver.maybeMakeECThunk(ctx.config.entry->getName(),
+                                  ctx.config.entry);
+    for (Export &e : config->exports) {
+      if (!e.data)
+        ctx.driver.maybeMakeECThunk(e.extName.empty() ? e.name : e.extName,
+                                    e.sym);
+    }
+  }
 
   // Resolve remaining undefined symbols and warn about imported locals.
   ctx.symtab.resolveRemainingUndefines();
