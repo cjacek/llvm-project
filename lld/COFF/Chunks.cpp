@@ -1064,4 +1064,14 @@ void AbsolutePointerChunk::writeTo(uint8_t *buf) const {
   }
 }
 
+ECThunkChunk::ECThunkChunk(COFFLinkerContext &ctx, DefinedRegular *targetSym)
+    : target(targetSym) {
+  ctx.ECThunks.push_back(this);
+}
+
+void ECThunkChunk::writeTo(uint8_t *buf) const {
+  memcpy(buf, ecThunkCode, sizeof(ecThunkCode));
+  write32le(buf + 10, target->getRVA() - rva - 14);
+}
+
 } // namespace lld::coff
