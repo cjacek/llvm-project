@@ -50,6 +50,11 @@ void markLive(COFFLinkerContext &ctx) {
       sym->file->live = true;
     else if (auto *sym = dyn_cast<DefinedImportThunk>(b))
       sym->wrappedSym->file->live = sym->wrappedSym->file->thunkLive = true;
+    else if (auto *sym = dyn_cast<DefinedSynthetic>(b)) {
+      Chunk *chunk = sym->getChunk();
+      if (chunk && isa<ECThunkChunk>(chunk))
+        addSym(cast<ECThunkChunk>(chunk)->target);
+    }
   };
 
   // Add GC root chunks.
