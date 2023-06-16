@@ -483,6 +483,29 @@ void SymbolTable::resolveRemainingUndefines() {
   SmallPtrSet<Symbol *, 8> undefs;
   DenseMap<Symbol *, Symbol *> localImports;
 
+  if (isArm64EC(ctx.config.machine)) {
+    for (auto &i : symMap) {
+      auto *undef = dyn_cast<Undefined>(i.second);
+      if (!undef || !undef->isUsedInRegularObj || undef->getWeakAlias())
+        continue;
+
+      StringRef name = undef->getName();
+      if (!name.starts_with("EXP+#"))
+        continue;
+
+      auto targetName = name.substr(strlen("EXP+")) + "$hp_target";
+      Symbol *targetSym = find(toString(targetName));
+      if (!targetSym || !isa<DefinedRegular>(targetSym)) {
+        warn("Symbol " + targetName + " not found, can't generate EC thunk");
+        continue;
+      }
+
+      auto thunk = make<ECThunkChunk>(ctx, cast<DefinedRegular>(targetSym));
+      ctx.ECThunks.push_back({thunk, thunk->target});
+      replaceSymbol<DefinedSynthetic>(undef, name, thunk);
+    }
+  }
+
   for (auto &i : symMap) {
     Symbol *sym = i.second;
     auto *undef = dyn_cast<Undefined>(sym);
