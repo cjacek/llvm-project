@@ -304,6 +304,7 @@ private:
   uint64_t sizeOfHeaders;
 
   OutputSection *textSec;
+  OutputSection *hexpthkSec;
   OutputSection *rdataSec;
   OutputSection *buildidSec;
   OutputSection *dataSec;
@@ -984,6 +985,7 @@ void Writer::createSections() {
 
   // Try to match the section order used by link.exe.
   textSec = createSection(".text", code | r | x);
+  hexpthkSec = createSection(".hexpthk", code | r | x);
   createSection(".bss", bss | r | w);
   rdataSec = createSection(".rdata", data | r);
   buildidSec = createSection(".buildid", data | r);
@@ -2046,6 +2048,11 @@ void Writer::maybeAddRVATable(SymbolRVASet tableSymbols, StringRef tableSym,
 
 // Create CHPE metadata chunks.
 void Writer::createECChunks() {
+  for (auto it : ctx.ECThunks) {
+    if (auto thunk = dyn_cast<ECThunkChunk>(it.first))
+      hexpthkSec->addChunk(thunk);
+  }
+
   auto codeMapChunk = make<ECCodeMapChunk>(codeMap);
   rdataSec->addChunk(codeMapChunk);
   Symbol *codeMapSym = ctx.symtab.findUnderscore("__hybrid_code_map");
