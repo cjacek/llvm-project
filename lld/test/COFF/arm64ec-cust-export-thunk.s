@@ -29,7 +29,9 @@ CHPE:       CodeMap [
 CHPE-NEXT:    0x1000 - 0x1008  ARM64EC
 CHPE-NEXT:    0x2000 - 0x200A  X64
 CHPE-NEXT:  ]
-CHPE-NEXT:  CodeRangesToEntryPoints: 0
+CHPE-NEXT:  CodeRangesToEntryPoints [
+CHPE-NEXT:    0x2000 - 0x200A -> 0x2000
+CHPE-NEXT:  ]
 CHPE-NEXT:  RedirectionMetadata [
 CHPE-NEXT:    0x2000 -> 0x1000
 CHPE-NEXT:  ]
