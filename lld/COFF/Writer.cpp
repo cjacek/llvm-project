@@ -2066,6 +2066,12 @@ void Writer::createECChunks() {
   Symbol *codeMapSym = ctx.symtab.findUnderscore("__hybrid_code_map");
   replaceSymbol<DefinedSynthetic>(codeMapSym, codeMapSym->getName(),
                                   codeMapChunk);
+
+  ECCodeRangesChunk *ranges = make<ECCodeRangesChunk>(ctx);
+  rdataSec->addChunk(ranges);
+  Symbol *rangesSym =
+      ctx.symtab.findUnderscore("__x64_code_ranges_to_entry_points");
+  replaceSymbol<DefinedSynthetic>(rangesSym, rangesSym->getName(), ranges);
 }
 
 // MinGW specific. Gather all relocations that are imported from a DLL even
@@ -2157,6 +2163,10 @@ void Writer::setECSymbols() {
         ->setVA(pdata.last->getRVA() + pdata.last->getSize() -
                 pdata.first->getRVA());
   }
+
+  Symbol *rangesCountSym =
+      ctx.symtab.findUnderscore("__x64_code_ranges_to_entry_points_count");
+  cast<DefinedAbsolute>(rangesCountSym)->setVA(ctx.ECThunks.size());
 }
 
 // Write section contents to a mmap'ed file.

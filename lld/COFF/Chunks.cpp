@@ -1074,4 +1074,19 @@ void ECThunkChunk::writeTo(uint8_t *buf) const {
   write32le(buf + 10, target->getRVA() - rva - 14);
 }
 
+size_t ECCodeRangesChunk::getSize() const {
+  return ctx.ECThunks.size() * sizeof(chpe_code_range_entry);
+}
+
+void ECCodeRangesChunk::writeTo(uint8_t *buf) const {
+  auto ranges = reinterpret_cast<chpe_code_range_entry *>(buf);
+
+  for (uint32_t i = 0; i < ctx.ECThunks.size(); i++) {
+    uint32_t start = ctx.ECThunks[i]->getRVA();
+    ranges[i].StartRva = start;
+    ranges[i].EndRva = start + ctx.ECThunks[i]->getSize();
+    ranges[i].EntryPoint = start;
+  }
+}
+
 } // namespace lld::coff
