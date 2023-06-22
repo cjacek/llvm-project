@@ -749,6 +749,16 @@ private:
   std::vector<ECCodeMapEntry> &map;
 };
 
+class ECCodeRangesChunk : public NonSectionChunk {
+public:
+  ECCodeRangesChunk(COFFLinkerContext &ctx) : ctx(ctx) {}
+  size_t getSize() const override;
+  void writeTo(uint8_t *buf) const override;
+
+private:
+  COFFLinkerContext &ctx;
+};
+
 class ECEntryPointsChunk : public NonSectionChunk {
 public:
   ECEntryPointsChunk(COFFLinkerContext &ctx) : ctx(ctx) {}
