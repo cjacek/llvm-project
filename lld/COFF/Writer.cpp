@@ -222,7 +222,8 @@ private:
   bool isInRange(uint16_t relType, uint64_t s, uint64_t p, int margin);
   std::pair<Defined *, bool> getThunk(DenseMap<uint64_t, Defined *> &lastThunks,
                                       Defined *target, uint64_t p,
-                                      uint16_t type, int margin);
+                                      uint16_t type, int margin,
+                                      MachineTypes machine);
   bool createThunks(OutputSection *os, int margin);
   bool verifyRanges(const std::vector<Chunk *> chunks);
   void createECCodeMap();
@@ -404,7 +405,7 @@ bool Writer::isInRange(uint16_t relType, uint64_t s, uint64_t p, int margin) {
     default:
       return true;
     }
-  } else if (ctx.config.machine == ARM64) {
+  } else if (isAnyArm64(ctx.config.machine)) {
     int64_t diff = AbsoluteDifference(s, p) + margin;
     switch (relType) {
     case IMAGE_REL_ARM64_BRANCH26:
@@ -425,17 +426,19 @@ bool Writer::isInRange(uint16_t relType, uint64_t s, uint64_t p, int margin) {
 // or create a new one.
 std::pair<Defined *, bool>
 Writer::getThunk(DenseMap<uint64_t, Defined *> &lastThunks, Defined *target,
-                 uint64_t p, uint16_t type, int margin) {
+                 uint64_t p, uint16_t type, int margin, MachineTypes machine) {
   Defined *&lastThunk = lastThunks[target->getRVA()];
-  if (lastThunk && isInRange(type, lastThunk->getRVA(), p, margin))
+  if (lastThunk && isInRange(type, lastThunk->getRVA(), p, margin) &&
+      lastThunk->getChunk()->getMachine() == machine)
     return {lastThunk, false};
   Chunk *c;
-  switch (ctx.config.machine) {
+  switch (machine) {
   case ARMNT:
     c = make<RangeExtensionThunkARM>(ctx, target);
     break;
   case ARM64:
-    c = make<RangeExtensionThunkARM64>(ctx, target);
+  case ARM64EC:
+    c = make<RangeExtensionThunkARM64>(machine, target);
     break;
   default:
     llvm_unreachable("Unexpected architecture");
@@ -497,7 +500,8 @@ bool Writer::createThunks(OutputSection *os, int margin) {
         continue;
 
       // If the target isn't in range, hook it up to an existing or new thunk.
-      auto [thunk, wasNew] = getThunk(lastThunks, sym, p, rel.Type, margin);
+      auto [thunk, wasNew] =
+          getThunk(lastThunks, sym, p, rel.Type, margin, sc->getMachine());
       if (wasNew) {
         Chunk *thunkChunk = thunk->getChunk();
         thunkChunk->setRVA(
@@ -621,7 +625,7 @@ bool Writer::verifyRanges(const std::vector<Chunk *> chunks) {
 // Assign addresses and add thunks if necessary.
 void Writer::finalizeAddresses() {
   assignAddresses();
-  if (ctx.config.machine != ARMNT && ctx.config.machine != ARM64)
+  if (ctx.config.machine != ARMNT && !isAnyArm64(ctx.config.machine))
     return;
 
   size_t origNumChunks = 0;
