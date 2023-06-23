@@ -561,6 +561,25 @@ std::pair<Symbol *, bool> SymbolTable::insert(StringRef name, InputFile *file) {
   return result;
 }
 
+void SymbolTable::addEntryThunk(Symbol *from, Symbol *to) {
+  entryThunks.push_back({from, to});
+}
+
+void SymbolTable::initializeEntryThunks() {
+  for (auto it : entryThunks) {
+    auto *to = dyn_cast<Defined>(it.second);
+    if (!to)
+      continue;
+    auto *from = dyn_cast<DefinedRegular>(it.first);
+    if (!from || !from->getChunk()->isCOMDAT() ||
+        cast<DefinedRegular>(from)->getValue()) {
+      error("non COMDAT symbol '" + from->getName() + "' in hybrid map");
+      continue;
+    }
+    from->getChunk()->setEntryThunk(to);
+  }
+}
+
 Symbol *SymbolTable::addUndefined(StringRef name, InputFile *f,
                                   bool isWeakAlias) {
   auto [s, wasInserted] = insert(name, f);
