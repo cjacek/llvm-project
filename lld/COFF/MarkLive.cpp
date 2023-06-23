@@ -34,17 +34,19 @@ void markLive(COFFLinkerContext &ctx) {
       if (sc->live && !sc->isDWARF())
         worklist.push_back(sc);
 
-  auto enqueue = [&](SectionChunk *c) {
+  std::function<void(SectionChunk *)> enqueue = [&](SectionChunk *c) {
     if (c->live)
       return;
     c->live = true;
     worklist.push_back(c);
   };
 
-  auto addSym = [&](Symbol *b) {
-    if (auto *sym = dyn_cast<DefinedRegular>(b))
+  std::function<void(Symbol *)> addSym = [&](Symbol *b) {
+    if (auto *sym = dyn_cast<DefinedRegular>(b)) {
       enqueue(sym->getChunk());
-    else if (auto *sym = dyn_cast<DefinedImportData>(b))
+      if (Symbol *entryThunk = ctx.symtab.findECThunk(b, 1))
+        addSym(entryThunk);
+    } else if (auto *sym = dyn_cast<DefinedImportData>(b))
       sym->file->live = true;
     else if (auto *sym = dyn_cast<DefinedImportThunk>(b))
       sym->wrappedSym->file->live = sym->wrappedSym->file->thunkLive = true;

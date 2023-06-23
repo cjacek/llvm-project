@@ -1490,6 +1490,9 @@ void Writer::assignAddresses() {
       }
       if (padding && c->isHotPatchable())
         virtualSize += padding;
+      if (isa<SectionChunk>(c) &&
+          ctx.symtab.findECEntryThunk(cast<SectionChunk>(c)))
+        virtualSize += sizeof(uint32_t);
       virtualSize = alignTo(virtualSize, c->getAlignment());
       c->setRVA(rva + virtualSize);
       virtualSize += c->getSize();

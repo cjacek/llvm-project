@@ -391,6 +391,8 @@ static void maybeReportRelocationToDiscarded(const SectionChunk *fromChunk,
 void SectionChunk::writeTo(uint8_t *buf) const {
   if (!hasData)
     return;
+  if (Chunk *entryThunk = file->ctx.symtab.findECEntryThunk(this))
+    write32le(buf - sizeof(uint32_t), entryThunk->getRVA() - rva + 1);
   // Copy section contents from source object file to output file.
   ArrayRef<uint8_t> a = getContents();
   if (!a.empty())
