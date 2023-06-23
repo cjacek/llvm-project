@@ -152,6 +152,33 @@ void ObjFile::parseLazy() {
   }
 }
 
+// FIXME: Move to COFF.h and add an enum for thunk types.
+struct ECThunksMapEntry {
+  uint32_t src;
+  uint32_t dst;
+  uint32_t type;
+};
+
+void ObjFile::initializeECThunks() {
+  for (SectionChunk *chunk : ECThunksMapChunks) {
+    if (chunk->getContents().size() % sizeof(ECThunksMapEntry))
+      fatal("Invalid EC thunks map size");
+
+    const ECThunksMapEntry *entry =
+        reinterpret_cast<const ECThunksMapEntry *>(chunk->getContents().data());
+    const ECThunksMapEntry *end =
+        entry + chunk->getContents().size() / sizeof(ECThunksMapEntry);
+    while (entry < end) {
+      if (entry->type != 0 && entry->type != 1 && entry->type != 4)
+        warn("Ignoring unknown EC thunk type " + Twine(entry->type));
+      else
+        ctx.symtab.addECThunk(getSymbol(entry->src), getSymbol(entry->dst),
+                              entry->type);
+      entry++;
+    }
+  }
+}
+
 void ObjFile::parse() {
   // Parse a memory buffer as a COFF file.
   std::unique_ptr<Binary> bin = CHECK(createBinary(mb), this);
@@ -168,6 +195,7 @@ void ObjFile::parse() {
   initializeSymbols();
   initializeFlags();
   initializeDependencies();
+  initializeECThunks();
 }
 
 const coff_section *ObjFile::getSection(uint32_t i) {
@@ -260,6 +288,8 @@ SectionChunk *ObjFile::readSection(uint32_t sectionNumber,
     guardEHContChunks.push_back(c);
   else if (name == ".sxdata")
     sxDataChunks.push_back(c);
+  else if (getMachineType() == ARM64EC && name == ".hybmp$x")
+    ECThunksMapChunks.push_back(c);
   else if (ctx.config.tailMerge && sec->NumberOfRelocations == 0 &&
            name == ".rdata" && leaderName.starts_with("??_C@"))
     // COFF sections that look like string literal sections (i.e. no

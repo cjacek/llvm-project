@@ -106,6 +106,10 @@ public:
   Symbol *addImportThunk(StringRef name, DefinedImportData *s,
                          uint16_t machine);
   void addLibcall(StringRef name);
+  void addECThunk(Symbol *from, Symbol *to, uint32_t type);
+  Symbol *findECThunk(Symbol *from, uint32_t type);
+  Chunk *findECEntryThunk(const Chunk *c);
+  void initializeEntryThunks();
 
   void reportDuplicate(Symbol *existing, InputFile *newFile,
                        SectionChunk *newSc = nullptr,
@@ -134,6 +138,9 @@ private:
   llvm::DenseMap<llvm::CachedHashStringRef, Symbol *> symMap;
   std::unique_ptr<BitcodeCompiler> lto;
   bool ltoCompilationDone = false;
+  llvm::DenseMap<std::pair<llvm::CachedHashStringRef, uint32_t>, Symbol *>
+      thunkECMap;
+  llvm::DenseMap<Chunk *, Chunk *> entryThunkMap;
 
   COFFLinkerContext &ctx;
 };
