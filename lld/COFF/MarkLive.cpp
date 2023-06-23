@@ -14,6 +14,8 @@
 #include "llvm/Support/TimeProfiler.h"
 #include <vector>
 
+using namespace llvm::COFF;
+
 namespace lld::coff {
 
 // Set live bit on for each reachable chunk. Unmarked (unreachable)
@@ -36,7 +38,7 @@ void markLive(COFFLinkerContext &ctx) {
       if (sc->live && !sc->isDWARF())
         worklist.push_back(sc);
 
-  auto enqueue = [&](SectionChunk *c) {
+  std::function<void(SectionChunk *)> enqueue = [&](SectionChunk *c) {
     if (c->live)
       return;
     c->live = true;
@@ -44,9 +46,11 @@ void markLive(COFFLinkerContext &ctx) {
   };
 
   std::function<void(Symbol *)> addSym = [&](Symbol *b) {
-    if (auto *sym = dyn_cast<DefinedRegular>(b))
+    if (auto *sym = dyn_cast<DefinedRegular>(b)) {
       enqueue(sym->getChunk());
-    else if (auto *sym = dyn_cast<DefinedImportData>(b))
+      if (Symbol *entryThunk = ctx.symtab.findECThunk(b, Arm64ECThunkType::Entry))
+        addSym(entryThunk);
+    } else if (auto *sym = dyn_cast<DefinedImportData>(b))
       sym->file->live = true;
     else if (auto *sym = dyn_cast<DefinedImportThunk>(b))
       sym->wrappedSym->file->live = sym->wrappedSym->file->thunkLive = true;

@@ -25,6 +25,7 @@
 #include <utility>
 
 using namespace llvm;
+using namespace llvm::COFF;
 
 namespace lld::coff {
 
@@ -583,6 +584,31 @@ std::pair<Symbol *, bool> SymbolTable::insert(StringRef name, InputFile *file) {
   if (!file || !isa<BitcodeFile>(file))
     result.first->isUsedInRegularObj = true;
   return result;
+}
+
+void SymbolTable::addECThunk(Symbol *from, Symbol *to, uint32_t type) {
+  thunkECMap[{CachedHashStringRef(from->getName()), type}] = to;
+}
+
+Symbol *SymbolTable::findECThunk(Symbol *from, Arm64ECThunkType type) {
+  return thunkECMap.lookup(
+      {CachedHashStringRef(from->getName()), uint32_t(type)});
+}
+
+void SymbolTable::initializeEntryThunks() {
+  for (auto it : thunkECMap) {
+    if (it.first.second != 1)
+      continue;
+    Symbol *from = find(it.first.first.val());
+    if (!from || !isa<Defined>(from) || !isa<Defined>(it.second))
+      continue;
+    entryThunkMap[cast<Defined>(from)->getChunk()] =
+        cast<Defined>(it.second)->getChunk();
+  }
+}
+
+Chunk *SymbolTable::findECEntryThunk(const Chunk *c) {
+  return entryThunkMap.lookup(c);
 }
 
 Symbol *SymbolTable::addUndefined(StringRef name, InputFile *f,
