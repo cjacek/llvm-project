@@ -617,18 +617,19 @@ private:
 
 class RangeExtensionThunkARM64 : public NonSectionCodeChunk {
 public:
-  explicit RangeExtensionThunkARM64(COFFLinkerContext &ctx, Defined *t)
-      : target(t), ctx(ctx) {
+  explicit RangeExtensionThunkARM64(MachineTypes machine, Defined *t)
+      : target(t), machine(machine) {
     setAlignment(4);
+    assert(llvm::COFF::isAnyArm64(machine));
   }
   size_t getSize() const override;
   void writeTo(uint8_t *buf) const override;
-  MachineTypes getMachine() const override { return ARM64; }
+  MachineTypes getMachine() const override { return machine; }
 
   Defined *target;
 
 private:
-  COFFLinkerContext &ctx;
+  MachineTypes machine;
 };
 
 // Windows-specific.
