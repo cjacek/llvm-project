@@ -165,6 +165,8 @@ llvm::Triple::ArchType LinkerDriver::getArch() {
   case ARMNT:
     return llvm::Triple::ArchType::arm;
   case ARM64:
+  case ARM64EC:
+  case ARM64X:
     return llvm::Triple::ArchType::aarch64;
   default:
     return llvm::Triple::ArchType::UnknownArch;
