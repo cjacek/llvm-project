@@ -982,7 +982,7 @@ void ObjFile::enqueuePdbFile(StringRef path, ObjFile *fromFile) {
 }
 
 ImportFile::ImportFile(COFFLinkerContext &ctx, MemoryBufferRef m)
-    : InputFile(ctx, ImportKind, m), live(!ctx.config.doGC), thunkLive(live) {}
+    : InputFile(ctx, ImportKind, m), live(!ctx.config.doGC) {}
 
 void ImportFile::parse() {
   const char *buf = mb.getBufferStart();
