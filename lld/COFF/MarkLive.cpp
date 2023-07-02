@@ -49,7 +49,7 @@ void markLive(COFFLinkerContext &ctx) {
     else if (auto *sym = dyn_cast<DefinedImportData>(b))
       sym->file->live = true;
     else if (auto *sym = dyn_cast<DefinedImportThunk>(b))
-      sym->wrappedSym->file->live = sym->wrappedSym->file->thunkLive = true;
+      sym->wrappedSym->file->live = sym->getChunk()->live = true;
     else if (auto *sym = dyn_cast<DefinedSynthetic>(b)) {
       if (auto chunk = dyn_cast_or_null<ECThunkChunk>(sym->getChunk()))
         addSym(chunk->target);
