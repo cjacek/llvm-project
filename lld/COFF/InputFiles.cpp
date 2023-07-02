@@ -997,7 +997,7 @@ void ObjFile::enqueuePdbFile(StringRef path, ObjFile *fromFile) {
 }
 
 ImportFile::ImportFile(COFFLinkerContext &ctx, MemoryBufferRef m)
-    : InputFile(ctx, ImportKind, m), live(!ctx.config.doGC), thunkLive(live) {}
+    : InputFile(ctx, ImportKind, m), live(!ctx.config.doGC) {}
 
 void ImportFile::parse() {
   const auto *hdr =
@@ -1071,9 +1071,16 @@ void ImportFile::parse() {
   // If type is function, we need to create a thunk which jump to an
   // address pointed by the __imp_ symbol. (This allows you to call
   // DLL functions just like regular non-DLL functions.)
-  if (isCode)
-    thunkSym = ctx.symtab.addImportThunk(
-        name, cast_or_null<DefinedImportData>(impSym), hdr->Machine);
+  if (isCode) {
+    if (ctx.config.machine != ARM64EC) {
+      thunkSym = ctx.symtab.addImportThunk(name, impSym, hdr->Machine);
+    } else {
+      thunkSym = ctx.symtab.addImportThunk(name, impSym, AMD64);
+      StringRef auxThunkName =
+          saver().save(*getArm64ECMangledFunctionName(name));
+      auxThunkSym = ctx.symtab.addImportThunk(auxThunkName, impECSym, ARM64EC);
+    }
+  }
 }
 
 BitcodeFile::BitcodeFile(COFFLinkerContext &ctx, MemoryBufferRef mb,

@@ -346,6 +346,7 @@ public:
   DefinedImportData *impSym = nullptr;
   DefinedImportData *impECSym = nullptr;
   Symbol *thunkSym = nullptr;
+  Symbol *auxThunkSym = nullptr;
   std::string dllName;
 
 private:
@@ -366,7 +367,6 @@ public:
   // imported symbol is used separately from whether the thunk is used in order
   // to avoid creating unnecessary thunks.
   bool live;
-  bool thunkLive;
 };
 
 // Used for LTO.
