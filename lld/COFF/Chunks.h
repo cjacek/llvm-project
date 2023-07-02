@@ -516,9 +516,11 @@ static const uint8_t importThunkARM64[] = {
 // contents will be a JMP instruction to some __imp_ symbol.
 class ImportThunkChunk : public NonSectionChunk {
 public:
-  ImportThunkChunk(COFFLinkerContext &ctx, Defined *s)
-      : NonSectionChunk(ImportThunkKind), impSymbol(s), ctx(ctx) {}
+  ImportThunkChunk(COFFLinkerContext &ctx, Defined *s);
+
   static bool classof(const Chunk *c) { return c->kind() == ImportThunkKind; }
+
+  bool live;
 
 protected:
   Defined *impSymbol;
