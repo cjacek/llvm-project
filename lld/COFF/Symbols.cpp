@@ -84,7 +84,7 @@ bool Symbol::isLive() const {
   if (auto *imp = dyn_cast<DefinedImportData>(this))
     return imp->file->live;
   if (auto *imp = dyn_cast<DefinedImportThunk>(this))
-    return imp->wrappedSym->file->thunkLive;
+    return imp->getChunk()->live;
   // Assume any other kind of symbol is live.
   return true;
 }
@@ -107,8 +107,9 @@ COFFSymbolRef DefinedCOFF::getCOFFSymbol() {
 
 uint64_t DefinedAbsolute::getRVA() { return va - ctx.config.imageBase; }
 
-static Chunk *makeImportThunk(COFFLinkerContext &ctx, DefinedImportData *s,
-                              uint16_t machine) {
+static ImportThunkChunk *makeImportThunk(COFFLinkerContext &ctx,
+                                         DefinedImportData *s,
+                                         uint16_t machine) {
   if (machine == AMD64)
     return make<ImportThunkChunkX64>(ctx, s);
   if (machine == I386)
