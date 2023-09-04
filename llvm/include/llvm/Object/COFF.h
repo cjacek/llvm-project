@@ -1362,6 +1362,39 @@ public:
   SectionStrippedError() { setErrorCode(object_error::section_stripped); }
 };
 
+inline bool isArm64ECMangledFunctionName(StringRef Name) {
+  return Name[0] == '?' ? Name.contains("$$h") : Name[0] == '#';
+}
+
+inline std::string getArm64ECMangledFunctionName(StringRef Name) {
+  if (isArm64ECMangledFunctionName(Name))
+    return std::string(Name);
+
+  if (Name[0] != '?')
+    return ("#" + Name).str();
+
+  size_t InsertIdx = Name.find("@@");
+  size_t ThreeAtSignsIdx = Name.find("@@@");
+  if (InsertIdx != std::string::npos && InsertIdx != ThreeAtSignsIdx) {
+    InsertIdx += 2;
+  } else {
+    InsertIdx = Name.find("@");
+    if (InsertIdx != std::string::npos)
+      InsertIdx++;
+  }
+  return (Name.substr(0, InsertIdx) + "$$h" + Name.substr(InsertIdx)).str();
+}
+
+inline std::string getArm64ECDemangledFunctionName(StringRef Name) {
+  if (Name[0] == '#')
+    return std::string(Name.substr(1));
+  if (Name[0] != '?')
+    return std::string(Name);
+
+  std::pair<StringRef, StringRef> Pair = Name.split("$$h");
+  return (Pair.first + Pair.second).str();
+}
+
 } // end namespace object
 
 } // end namespace llvm
