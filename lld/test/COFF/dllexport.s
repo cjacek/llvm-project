@@ -12,6 +12,7 @@
 # DECORATED-IMPLIB-NEXT: __imp__stdcall@8
 # DECORATED-IMPLIB-NEXT: _stdcall@8
 # DECORATED-IMPLIB: Name type: noprefix
+# DECORATED-IMPLIB-NEXT: Export name: _underscored
 # DECORATED-IMPLIB-NEXT: __imp___underscored
 # DECORATED-IMPLIB-NEXT: __underscored
 # DECORATED-IMPLIB: Name type: name

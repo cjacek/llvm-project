@@ -41,9 +41,11 @@ void dumpCOFFImportFile(const COFFImportFile *File, ScopedPrinter &Writer) {
     break;
   case COFF::IMPORT_NAME_NOPREFIX:
     Writer.printString("Name type", "noprefix");
+    Writer.printString("Export name", File->getExportName());
     break;
   case COFF::IMPORT_NAME_UNDECORATE:
     Writer.printString("Name type", "undecorate");
+    Writer.printString("Export name", File->getExportName());
     break;
   }
 
