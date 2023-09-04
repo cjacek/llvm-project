@@ -47,6 +47,10 @@ void dumpCOFFImportFile(const COFFImportFile *File, ScopedPrinter &Writer) {
     Writer.printString("Name type", "undecorate");
     Writer.printString("Export name", File->getExportName());
     break;
+  case COFF::IMPORT_NAME_EXPORTAS:
+    Writer.printString("Name type", "export as");
+    Writer.printString("Export name", File->getExportName());
+    break;
   }
 
   for (const object::BasicSymbolRef &Sym : File->symbols()) {
