@@ -73,6 +73,10 @@ StringRef COFFImportFile::getExportName() const {
     break;
   default:
     break;
+  case IMPORT_NAME_EXPORTAS:
+    StringRef dllName = StringRef(name.begin() + name.size() + 1);
+    name = StringRef(dllName.begin() + dllName.size() + 1);
+    break;
   }
 
   return name;
@@ -208,7 +212,8 @@ public:
   // Create a short import file which is described in PE/COFF spec 7. Import
   // Library Format.
   NewArchiveMember createShortImport(StringRef Sym, uint16_t Ordinal,
-                                     ImportType Type, ImportNameType NameType);
+                                     ImportType Type, ImportNameType NameType,
+                                     std::string &ExportName);
 
   // Create a weak external file which is described in PE/COFF Aux Format 3.
   NewArchiveMember createWeakExternal(StringRef Sym, StringRef Weak, bool Imp);
@@ -501,8 +506,11 @@ NewArchiveMember ObjectFactory::createNullThunk(std::vector<uint8_t> &Buffer) {
 NewArchiveMember ObjectFactory::createShortImport(StringRef Sym,
                                                   uint16_t Ordinal,
                                                   ImportType ImportType,
-                                                  ImportNameType NameType) {
+                                                  ImportNameType NameType,
+                                                  std::string &ExportName) {
   size_t ImpSize = ImportName.size() + Sym.size() + 2; // +2 for NULs
+  if (!ExportName.empty())
+    ImpSize += ExportName.size() + 1;
   size_t Size = sizeof(coff_import_header) + ImpSize;
   char *Buf = Alloc.Allocate<char>(Size);
   memset(Buf, 0, Size);
@@ -522,6 +530,10 @@ NewArchiveMember ObjectFactory::createShortImport(StringRef Sym,
   memcpy(P, Sym.data(), Sym.size());
   P += Sym.size() + 1;
   memcpy(P, ImportName.data(), ImportName.size());
+  if (!ExportName.empty()) {
+    P += ImportName.size() + 1;
+    memcpy(P, ExportName.data(), ExportName.size());
+  }
 
   return {MemoryBufferRef(StringRef(Buf, Size), ImportName)};
 }
@@ -634,25 +646,36 @@ Error writeImportLibrary(StringRef ImportName, StringRef Path,
       ImportType = IMPORT_CONST;
 
     StringRef SymbolName = E.SymbolName.empty() ? E.Name : E.SymbolName;
-    ImportNameType NameType = E.Noname
-                                  ? IMPORT_ORDINAL
-                                  : getNameType(SymbolName, E.Name,
-                                                Machine, MinGW);
-    Expected<std::string> Name = E.ExtName.empty()
-                                     ? std::string(SymbolName)
-                                     : replace(SymbolName, E.Name, E.ExtName);
+    std::string Name;
 
-    if (!Name)
-      return Name.takeError();
+    if (E.ExtName.empty()) {
+      Name = std::string(SymbolName);
+    } else {
+      Expected<std::string> ReplacedName = replace(SymbolName, E.Name, E.ExtName);
+      if (!ReplacedName)
+        return ReplacedName.takeError();
+      Name.swap(*ReplacedName);
+    }
 
-    if (!E.AliasTarget.empty() && *Name != E.AliasTarget) {
-      Members.push_back(OF.createWeakExternal(E.AliasTarget, *Name, false));
-      Members.push_back(OF.createWeakExternal(E.AliasTarget, *Name, true));
+    if (!E.AliasTarget.empty() && Name != E.AliasTarget) {
+      Members.push_back(OF.createWeakExternal(E.AliasTarget, Name, false));
+      Members.push_back(OF.createWeakExternal(E.AliasTarget, Name, true));
       continue;
     }
 
+    ImportNameType NameType;
+    std::string ExportName;
+    if (E.Noname) {
+      NameType = IMPORT_ORDINAL;
+    } else if (ImportType == IMPORT_CODE && isArm64EC(Machine)) {
+      NameType = IMPORT_NAME_EXPORTAS;
+      ExportName = Name;
+    } else {
+      NameType = getNameType(SymbolName, E.Name, Machine, MinGW);
+    }
+
     Members.push_back(
-        OF.createShortImport(*Name, E.Ordinal, ImportType, NameType));
+        OF.createShortImport(Name, E.Ordinal, ImportType, NameType, ExportName));
   }
 
   return writeArchive(Path, Members, SymtabWritingMode::NormalSymtab,
