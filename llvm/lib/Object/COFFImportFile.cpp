@@ -683,6 +683,14 @@ Error writeImportLibrary(StringRef ImportName, StringRef Path,
       NameType = getNameType(SymbolName, E.Name, Machine, MinGW);
     }
 
+    if (ImportType == IMPORT_CODE && isArm64EC(Machine)) {
+      if (ExportName.empty()) {
+        NameType = IMPORT_NAME_EXPORTAS;
+        ExportName = getArm64ECDemangledFunctionName(Name);
+      }
+      Name = getArm64ECMangledFunctionName(Name);
+    }
+
     Members.push_back(OF.createShortImport(Name, E.Ordinal, ImportType,
                                            NameType, ExportName, Machine));
   }
