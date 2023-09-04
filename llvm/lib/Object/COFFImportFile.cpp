@@ -52,6 +52,32 @@ StringRef COFFImportFile::getFileFormatName() const {
   }
 }
 
+StringRef COFFImportFile::getExportName() const {
+  const coff_import_header *hdr = getCOFFImportHeader();
+  StringRef name = StringRef(Data.getBufferStart() + sizeof(*hdr));
+
+  auto ltrim1 = [](StringRef s, const char *chars) {
+    return !s.empty() && strchr(chars, s[0]) ? s.substr(1) : s;
+  };
+
+  switch (hdr->getNameType()) {
+  case IMPORT_ORDINAL:
+    name = "";
+    break;
+  case IMPORT_NAME_NOPREFIX:
+    name = ltrim1(name, "?@_");
+    break;
+  case IMPORT_NAME_UNDECORATE:
+    name = ltrim1(name, "?@_");
+    name = name.substr(0, name.find('@'));
+    break;
+  default:
+    break;
+  }
+
+  return name;
+}
+
 static uint16_t getImgRelRelocation(MachineTypes Machine) {
   switch (Machine) {
   default:
