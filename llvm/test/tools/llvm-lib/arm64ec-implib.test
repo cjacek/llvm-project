@@ -33,7 +33,8 @@ READOBJ-EMPTY:
 READOBJ-NEXT: File: test.dll
 READOBJ-NEXT: Format: COFF-import-file-ARM64EC
 READOBJ-NEXT: Type: code
-READOBJ-NEXT: Name type: name
+READOBJ-NEXT: Name type: export as
+READOBJ-NEXT: Export name: funcexp
 READOBJ-NEXT: Symbol: __imp_funcexp
 READOBJ-NEXT: Symbol: funcexp
 READOBJ-EMPTY:
