@@ -6,15 +6,19 @@
 # RUN: llvm-readobj --coff-exports %t.dll | FileCheck -check-prefix UNDECORATED-EXPORTS %s
 
 # UNDECORATED-IMPLIB: Name type: noprefix
+# UNDECORATED-IMPLIB-NEXT: Export name: _underscored
 # UNDECORATED-IMPLIB-NEXT: __imp___underscored
 # UNDECORATED-IMPLIB-NEXT: __underscored
 # UNDECORATED-IMPLIB: Name type: undecorate
+# UNDECORATED-IMPLIB-NEXT: Export name: fastcall
 # UNDECORATED-IMPLIB-NEXT: __imp_@fastcall@8
 # UNDECORATED-IMPLIB-NEXT: fastcall@8
 # UNDECORATED-IMPLIB: Name type: undecorate
+# UNDECORATED-IMPLIB-NEXT: Export name: stdcall
 # UNDECORATED-IMPLIB-NEXT: __imp__stdcall@8
 # UNDECORATED-IMPLIB-NEXT: _stdcall@8
 # UNDECORATED-IMPLIB: Name type: undecorate
+# UNDECORATED-IMPLIB-NEXT: Export name: vectorcall
 # UNDECORATED-IMPLIB-NEXT: __imp_vectorcall@@8
 # UNDECORATED-IMPLIB-NEXT: vectorcall@@8
 
@@ -54,6 +58,7 @@
 # DECORATED-MINGW-IMPLIB-NEXT: __imp_@fastcall@8
 # DECORATED-MINGW-IMPLIB-NEXT: fastcall@8
 # DECORATED-MINGW-IMPLIB: Name type: noprefix
+# DECORATED-MINGW-IMPLIB-NEXT: Export name: stdcall@8
 # DECORATED-MINGW-IMPLIB-NEXT: __imp__stdcall@8
 # DECORATED-MINGW-IMPLIB-NEXT: _stdcall@8
 # GNU tools don't support vectorcall, but this test is just to track that
@@ -78,11 +83,13 @@
 # MINGW-KILL-AT-IMPLIB: __imp__fastcall
 # MINGW-KILL-AT-IMPLIB-NEXT: _fastcall
 # MINGW-KILL-AT-IMPLIB: Name type: noprefix
+# MINGW-KILL-AT-IMPLIB-NEXT: Export name: stdcall
 # MINGW-KILL-AT-IMPLIB-NEXT: __imp__stdcall
 # MINGW-KILL-AT-IMPLIB-NEXT: _stdcall
 # GNU tools don't support vectorcall, but this test is just to track that
 # lld's behaviour remains consistent over time.
 # MINGW-KILL-AT-IMPLIB: Name type: noprefix
+# MINGW-KILL-AT-IMPLIB-NEXT: Export name: vectorcall
 # MINGW-KILL-AT-IMPLIB-NEXT: __imp__vectorcall
 # MINGW-KILL-AT-IMPLIB-NEXT: _vectorcall
 

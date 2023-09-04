@@ -68,6 +68,7 @@ public:
   }
 
   StringRef getFileFormatName() const;
+  StringRef getExportName() const;
 
 private:
   bool isData() const {
