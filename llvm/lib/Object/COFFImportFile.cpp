@@ -669,7 +669,8 @@ Error writeImportLibrary(StringRef ImportName, StringRef Path,
       NameType = IMPORT_ORDINAL;
     } else if (ImportType == IMPORT_CODE && isArm64EC(Machine)) {
       NameType = IMPORT_NAME_EXPORTAS;
-      ExportName = Name;
+      ExportName = getArm64ECDemangledFunctionName(Name);
+      Name = getArm64ECMangledFunctionName(Name);
     } else {
       NameType = getNameType(SymbolName, E.Name, Machine, MinGW);
     }
