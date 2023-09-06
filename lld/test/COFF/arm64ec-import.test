@@ -13,9 +13,14 @@ RUN: llvm-readobj --coff-imports out.dll | FileCheck -check-prefix=IMPORTS %s
 IMPORTS:      Import {
 IMPORTS-NEXT:   Name: test.dll
 IMPORTS-NEXT:   ImportLookupTableRVA:
-IMPORTS-NEXT:   ImportAddressTableRVA:
+IMPORTS-NEXT:   ImportAddressTableRVA: 0x2000
 IMPORTS-NEXT:   Symbol: myfunc (0)
 IMPORTS-NEXT: }
+
+RUN: llvm-readobj --headers out.dll | FileCheck -check-prefix=HEADERS %s
+HEADERS:  LoadConfigTableRVA: 0x3008
+HEADERS:  IATRVA: 0x2000
+HEADERS:  IATSize: 0x1000
 
 #--- test.s
     .section .test, "r"
