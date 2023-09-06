@@ -1,0 +1,44 @@
+REQUIRES: aarch64, x86
+RUN: split-file %s %t.dir && cd %t.dir
+
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows test.s -o test.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows arm64ec-stubs.s -o arm64ec-stubs.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows %S/Inputs/loadconfig-arm64ec.s -o loadconfig-arm64ec.obj
+RUN: llvm-lib -machine:arm64ec -def:test.def -out:test-arm64ec.lib
+
+RUN: lld-link -machine:arm64ec -dll -noentry -out:out.dll loadconfig-arm64ec.obj arm64ec-stubs.obj \
+RUN:          test.obj test-arm64ec.lib
+
+RUN: llvm-readobj --coff-imports out.dll | FileCheck -check-prefix=IMPORTS %s
+IMPORTS:      Import {
+IMPORTS-NEXT:   Name: test.dll
+IMPORTS-NEXT:   ImportLookupTableRVA:
+IMPORTS-NEXT:   ImportAddressTableRVA:
+IMPORTS-NEXT:   Symbol: myfunc (0)
+IMPORTS-NEXT: }
+
+#--- test.s
+    .section .test, "r"
+    .globl arm64ec_data_sym
+    .p2align 2, 0x0
+arm64ec_data_sym:
+    .rva __imp_myfunc
+
+#--- arm64ec-stubs.s
+    .text
+    .globl __icall_helper_arm64ec
+    .p2align 2, 0x0
+__icall_helper_arm64ec:
+    mov w0, #2
+    ret
+
+    .section .cfg, "r"
+    .globl __os_arm64x_dispatch_icall
+    .p2align 2, 0x0
+__os_arm64x_dispatch_icall:
+    .xword 1
+
+#--- test.def
+NAME test.dll
+EXPORTS
+    myfunc

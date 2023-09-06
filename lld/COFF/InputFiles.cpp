@@ -993,9 +993,14 @@ void ImportFile::parse() {
     fatal("broken import library");
 
   // Read names and create an __imp_ symbol.
-  StringRef name = saver().save(StringRef(buf + sizeof(*hdr)));
+  const char *nameStart = buf + sizeof(*hdr);
+  StringRef name;
+  if (isArm64EC(hdr->Machine))
+    name = saver().save(getArm64ECDemangledFunctionName(nameStart));
+  else
+    name = saver().save(StringRef(nameStart));
   StringRef impName = saver().save("__imp_" + name);
-  const char *nameStart = buf + sizeof(coff_import_header) + name.size() + 1;
+  nameStart += strlen(nameStart) + 1;
   dllName = std::string(StringRef(nameStart));
   StringRef extName;
   switch (hdr->getNameType()) {
