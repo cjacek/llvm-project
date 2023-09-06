@@ -217,6 +217,7 @@ private:
   void createExportTable();
   void mergeSections();
   void sortECChunks();
+  void appendECImportTables();
   void removeUnusedSections();
   void assignAddresses();
   bool isInRange(uint16_t relType, uint64_t s, uint64_t p, int margin);
@@ -747,6 +748,7 @@ void Writer::run() {
     createExportTable();
     mergeSections();
     sortECChunks();
+    appendECImportTables();
     removeUnusedSections();
     finalizeAddresses();
     removeEmptySections();
@@ -902,10 +904,28 @@ void Writer::addSyntheticIdata() {
   // Add each type in the correct order.
   add(".idata$2", idata.dirs);
   add(".idata$4", idata.lookups);
-  add(".idata$5", idata.addresses);
+  if (!isArm64EC(ctx.config.machine))
+    add(".idata$5", idata.addresses);
   if (!idata.hints.empty())
     add(".idata$6", idata.hints);
   add(".idata$7", idata.dllNames);
+}
+
+void Writer::appendECImportTables() {
+  if (!isArm64EC(ctx.config.machine) || idata.addresses.empty())
+    return;
+
+  if (!rdataSec->chunks.empty())
+    rdataSec->chunks.front()->setAlignment(
+        std::max(0x1000u, rdataSec->chunks.front()->getAlignment()));
+
+  iatStart = idata.addresses.front();
+  size_t size = 0;
+  for (Chunk *c : idata.addresses)
+    size += c->getSize();
+  iatSize = alignTo(size, 0x1000);
+  rdataSec->chunks.insert(rdataSec->chunks.begin(), idata.addresses.begin(),
+                          idata.addresses.end());
 }
 
 // Locate the first Chunk and size of the import directory list and the
