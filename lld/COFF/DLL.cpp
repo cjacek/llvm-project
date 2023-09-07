@@ -142,6 +142,16 @@ private:
   size_t size;
 };
 
+class ECImportChunk : public NonSectionChunk {
+public:
+  explicit ECImportChunk() { setAlignment(sizeof(uint64_t)); }
+  size_t getSize() const override { return sizeof(uint64_t); }
+
+  void writeTo(uint8_t *buf) const override {
+    write64le(buf, 0); // FIXME
+  }
+};
+
 static std::vector<std::vector<DefinedImportData *>>
 binImports(COFFLinkerContext &ctx,
            const std::vector<DefinedImportData *> &imports) {
@@ -160,7 +170,12 @@ binImports(COFFLinkerContext &ctx,
     // Sort symbols by name for each group.
     std::vector<DefinedImportData *> &syms = kv.second;
     llvm::sort(syms, [](DefinedImportData *a, DefinedImportData *b) {
-      return a->getName() < b->getName();
+      auto getBaseName = [](StringRef name) {
+        name.consume_front("__imp_");
+        name.consume_front("aux_");
+        return name;
+      };
+      return getBaseName(a->getName()) < getBaseName(b->getName());
     });
     v.push_back(std::move(syms));
   }
@@ -710,6 +725,19 @@ void IdataContents::create(COFFLinkerContext &ctx) {
   }
   // Add null terminator.
   dirs.push_back(make<NullChunk>(sizeof(ImportDirectoryTableEntry)));
+
+  if (ctx.config.machine == ARM64EC) {
+    std::vector<std::vector<DefinedImportData *>> av =
+        binImports(ctx, ECImports);
+    for (std::vector<DefinedImportData *> &syms : av) {
+      for (DefinedImportData *s : syms) {
+        auto chunk = make<ECImportChunk>();
+        auxIat.push_back(chunk);
+        s->setLocation(chunk);
+      }
+      auxIat.push_back(make<NullChunk>(ctx.config.wordsize));
+    }
+  }
 }
 
 std::vector<Chunk *> DelayLoadContents::getChunks() {
