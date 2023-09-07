@@ -20,17 +20,23 @@ namespace lld::coff {
 // call create() to populate the chunk vectors.
 class IdataContents {
 public:
-  void add(DefinedImportData *sym) { imports.push_back(sym); }
+  void add(ImportFile *file) {
+    imports.push_back(file->impSym);
+    if (file->impECSym)
+      ECImports.push_back(file->impECSym);
+  }
   bool empty() { return imports.empty(); }
 
   void create(COFFLinkerContext &ctx);
 
   std::vector<DefinedImportData *> imports;
+  std::vector<DefinedImportData *> ECImports;
   std::vector<Chunk *> dirs;
   std::vector<Chunk *> lookups;
   std::vector<Chunk *> addresses;
   std::vector<Chunk *> hints;
   std::vector<Chunk *> dllNames;
+  std::vector<Chunk *> auxIat;
 };
 
 // Windows-specific.
