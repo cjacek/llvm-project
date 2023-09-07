@@ -346,6 +346,7 @@ public:
   DefinedImportData *impSym = nullptr;
   DefinedImportData *impECSym = nullptr;
   Symbol *thunkSym = nullptr;
+  Symbol *auxThunkSym = nullptr;
   std::string dllName;
 
 private:
