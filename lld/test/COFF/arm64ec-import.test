@@ -22,12 +22,19 @@ HEADERS:  LoadConfigTableRVA: 0x3008
 HEADERS:  IATRVA: 0x2000
 HEADERS:  IATSize: 0x1000
 
+RUN: llvm-readobj --hex-dump=.test out.dll | FileCheck -check-prefix=TESTSEC %s
+TESTSEC: 0x180007000 00400000 00200000
+
+RUN: llvm-readobj --coff-load-config out.dll | FileCheck -check-prefix=LOADCONFIG %s
+LOADCONFIG: AuxiliaryIAT: 0x4000
+
 #--- test.s
     .section .test, "r"
     .globl arm64ec_data_sym
     .p2align 2, 0x0
 arm64ec_data_sym:
     .rva __imp_myfunc
+    .rva __imp_aux_myfunc
 
 #--- arm64ec-stubs.s
     .text
