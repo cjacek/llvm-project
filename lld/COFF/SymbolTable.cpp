@@ -790,11 +790,12 @@ Symbol *SymbolTable::addCommon(InputFile *f, StringRef n, uint64_t size,
   return s;
 }
 
-DefinedImportData *SymbolTable::addImportData(StringRef n, ImportFile *f) {
+DefinedImportData *SymbolTable::addImportData(StringRef n, ImportFile *f,
+                                              bool isEC) {
   auto [s, wasInserted] = insert(n, nullptr);
   s->isUsedInRegularObj = true;
   if (wasInserted || isa<Undefined>(s) || s->isLazy()) {
-    replaceSymbol<DefinedImportData>(s, n, f);
+    replaceSymbol<DefinedImportData>(s, n, f, isEC);
     return cast<DefinedImportData>(s);
   }
 

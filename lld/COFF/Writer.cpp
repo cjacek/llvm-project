@@ -926,6 +926,10 @@ void Writer::appendECImportTables() {
   iatSize = alignTo(size, 0x1000);
   rdataSec->chunks.insert(rdataSec->chunks.begin(), idata.addresses.begin(),
                           idata.addresses.end());
+
+  idata.auxIat.front()->setAlignment(0x1000);
+  rdataSec->chunks.insert(rdataSec->chunks.end(), idata.auxIat.begin(),
+                          idata.auxIat.end());
 }
 
 // Locate the first Chunk and size of the import directory list and the
@@ -1207,7 +1211,7 @@ void Writer::createImportTables() {
               " due to import of data: " + toString(ctx, *impSym));
       delayIdata.add(impSym);
     } else {
-      idata.add(impSym);
+      idata.add(file);
     }
   }
 }
@@ -2236,6 +2240,11 @@ void Writer::setECSymbols() {
   Symbol *entryPointCountSym =
       ctx.symtab.findUnderscore("__arm64x_redirection_metadata_count");
   cast<DefinedAbsolute>(entryPointCountSym)->setVA(ctx.ECThunks.size());
+
+  Symbol *iatSym = ctx.symtab.findUnderscore("__hybrid_auxiliary_iat");
+  replaceSymbol<DefinedSynthetic>(iatSym, "__hybrid_auxiliary_iat",
+                                  idata.auxIat.empty() ? nullptr
+                                                       : idata.auxIat.front());
 }
 
 // Write section contents to a mmap'ed file.

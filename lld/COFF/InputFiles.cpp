@@ -1044,19 +1044,34 @@ void ImportFile::parse() {
   this->hdr = hdr;
   externalName = extName;
 
-  impSym = ctx.symtab.addImportData(impName, this);
+  bool isCode = hdr->getType() == llvm::COFF::IMPORT_CODE;
+
+  if (ctx.config.machine != ARM64EC) {
+    impSym = ctx.symtab.addImportData(impName, this, false);
+  } else {
+    StringRef auxImpName = saver().save("__imp_aux_" + name);
+    if (isCode) {
+      impSym = ctx.symtab.addImportData(auxImpName, this, false);
+      impECSym = ctx.symtab.addImportData(impName, this, true);
+    } else {
+      impSym = ctx.symtab.addImportData(impName, this, false);
+      impECSym = ctx.symtab.addImportData(auxImpName, this, true);
+    }
+    if (!impECSym)
+      return;
+  }
   // If this was a duplicate, we logged an error but may continue;
   // in this case, impSym is nullptr.
   if (!impSym)
     return;
 
   if (hdr->getType() == llvm::COFF::IMPORT_CONST)
-    static_cast<void>(ctx.symtab.addImportData(name, this));
+    static_cast<void>(ctx.symtab.addImportData(name, this, false));
 
   // If type is function, we need to create a thunk which jump to an
   // address pointed by the __imp_ symbol. (This allows you to call
   // DLL functions just like regular non-DLL functions.)
-  if (hdr->getType() == llvm::COFF::IMPORT_CODE)
+  if (isCode)
     thunkSym = ctx.symtab.addImportThunk(
         name, cast_or_null<DefinedImportData>(impSym), hdr->Machine);
 }
