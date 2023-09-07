@@ -343,7 +343,7 @@ public:
 
   static bool classof(const InputFile *f) { return f->kind() == ImportKind; }
 
-  Symbol *impSym = nullptr;
+  DefinedImportData *impSym = nullptr;
   Symbol *thunkSym = nullptr;
   std::string dllName;
 
