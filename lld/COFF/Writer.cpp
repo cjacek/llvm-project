@@ -909,6 +909,11 @@ void Writer::addSyntheticIdata() {
   if (!idata.hints.empty())
     add(".idata$6", idata.hints);
   add(".idata$7", idata.dllNames);
+
+  if (idata.auxIatCopyChunk) {
+    PartialSection *pSec = createPartialSection(".idata$a", rdata);
+    pSec->chunks.push_back(idata.auxIatCopyChunk);
+  }
 }
 
 void Writer::appendECImportTables() {
@@ -2255,6 +2260,10 @@ void Writer::setECSymbols() {
   replaceSymbol<DefinedSynthetic>(iatSym, "__hybrid_auxiliary_iat",
                                   idata.auxIat.empty() ? nullptr
                                                        : idata.auxIat.front());
+
+  Symbol *iatCopySym = ctx.symtab.findUnderscore("__hybrid_auxiliary_iat_copy");
+  replaceSymbol<DefinedSynthetic>(iatCopySym, "__hybrid_auxiliary_iat_copy",
+                                  idata.auxIatCopyChunk);
 }
 
 // Write section contents to a mmap'ed file.
