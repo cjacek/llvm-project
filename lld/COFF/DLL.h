@@ -37,6 +37,7 @@ public:
   std::vector<Chunk *> hints;
   std::vector<Chunk *> dllNames;
   std::vector<Chunk *> auxIat;
+  Chunk *auxIatCopyChunk = nullptr;
 };
 
 // Windows-specific.
