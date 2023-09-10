@@ -13,6 +13,7 @@
 #include "lld/Common/Memory.h"
 #include "lld/Common/Strings.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallSet.h"
 #include "llvm/Demangle/Demangle.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
@@ -126,9 +127,13 @@ DefinedImportThunk::DefinedImportThunk(COFFLinkerContext &ctx, StringRef name,
 
 Defined *Undefined::getWeakAlias() {
   // A weak alias may be a weak alias to another symbol, so check recursively.
-  for (Symbol *a = weakAlias; a; a = cast<Undefined>(a)->weakAlias)
+  DenseMap<Symbol *, bool> weakChain;
+  for (Symbol *a = weakAlias; a; a = cast<Undefined>(a)->weakAlias) {
+    if (!weakChain.try_emplace(a, true).second)
+      break; // We have a cycle.
     if (auto *d = dyn_cast<Defined>(a))
       return d;
+  }
   return nullptr;
 }
 
