@@ -1,0 +1,50 @@
+REQUIRES: x86
+RUN: split-file %s %t.dir && cd %t.dir
+
+RUN: llvm-mc -filetype=obj -triple=x86_64-windows test.s -o test.obj
+RUN: llvm-mc -filetype=obj -triple=x86_64-windows weak2.s -o weak2.obj
+RUN: llvm-mc -filetype=obj -triple=x86_64-windows weak-anti-dep.s -o weak-anti-dep.obj
+
+RUN: not lld-link -machine:amd64 -dll -noentry -out:test.dll test.obj weak2.obj 2>&1 \
+RUN:              | FileCheck -check-prefix=WEAK %s
+
+WEAK:      lld-link: error: undefined symbol: testsym
+WEAK-NEXT: >>> referenced by test.obj
+WEAK-EMPTY:
+WEAK-NEXT: lld-link: error: undefined symbol: weak1
+WEAK-NEXT: >>> referenced by test.obj
+WEAK-NEXT: >>> referenced by weak2.obj
+WEAK-EMPTY:
+WEAK-NEXT: lld-link: error: undefined symbol: weak2
+WEAK-NEXT: >>> referenced by test.obj:(.test)
+WEAK-NEXT: >>> referenced by weak2.obj
+
+RUN: not lld-link -machine:amd64 -dll -noentry -out:test.dll weak-anti-dep.obj 2>&1 \
+RUN:              | FileCheck -check-prefix=ANTIDEP %s
+
+ANTIDEP:      lld-link: error: undefined symbol: testsym
+ANTIDEP-NEXT: >>> referenced by weak-anti-dep.obj:(.test)
+ANTIDEP-EMPTY:
+ANTIDEP-NEXT: lld-link: error: undefined symbol: testsym2
+ANTIDEP-NEXT: >>> referenced by weak-anti-dep.obj
+
+#--- test.s
+    .weak testsym
+.set testsym, weak1
+    .weak weak1
+.set weak1, weak2
+    .section .test, "r"
+    .rva testsym
+
+#--- weak2.s
+    .weak weak2
+.set weak2, weak1
+
+#--- weak-anti-dep.s
+    .weak_anti_dep testsym
+.set testsym, testsym2
+    .weak_anti_dep testsym2
+.set testsym2, testsym
+
+    .section .test, "r"
+    .rva testsym
