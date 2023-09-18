@@ -2513,8 +2513,13 @@ void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
         if (!sym)
           continue;
         if (auto *u = dyn_cast<Undefined>(sym))
-          if (!u->weakAlias)
+          if (!u->weakAlias || u->isECAlias()) {
             u->weakAlias = ctx.symtab.addUndefined(to);
+            if (u->ECAlias) {
+              cast<Undefined>(u->ECAlias)->ECAlias = nullptr;
+              u->ECAlias = nullptr;
+            }
+          }
       }
 
       // If any inputs are bitcode files, the LTO code generator may create
