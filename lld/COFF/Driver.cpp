@@ -2530,9 +2530,10 @@ void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
         Symbol *sym = ctx.symtab.find(from);
         if (!sym)
           continue;
-        if (auto *u = dyn_cast<Undefined>(sym))
-          if (!u->weakAlias)
+        if (auto *u = dyn_cast<Undefined>(sym)) {
+          if (!u->weakAlias || u->isECAlias(ctx.config.machine))
             u->setWeakAlias(ctx.symtab.addUndefined(to));
+        }
       }
 
       // If any inputs are bitcode files, the LTO code generator may create
