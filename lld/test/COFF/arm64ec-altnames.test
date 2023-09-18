@@ -1,0 +1,32 @@
+REQUIRES: x86
+RUN: split-file %s %t.dir && cd %t.dir
+
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows test.s -o test.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows %S/Inputs/loadconfig-arm64ec.s -o loadconfig-arm64ec.obj
+
+RUN: lld-link -machine:arm64ec -dll -noentry -out:test.dll test.obj loadconfig-arm64ec.obj "-alternatename:#testsym=altsym"
+
+RUN: llvm-objdump -d test.dll | FileCheck -check-prefix=DISASM %s
+DISASM:      0000000180001000 <.text>:
+DISASM-NEXT: 180001000: 52800020     mov     w0, #0x1                // =1
+DISASM-NEXT: 180001004: d65f03c0     ret
+
+#--- test.s
+    .weak_anti_dep testsym
+.set testsym, "#testsym"
+    .weak_anti_dep "#testsym"
+.set "#testsym", thunksym
+
+    .section .test, "r"
+    .rva "#testsym"
+
+    .section .thnk,"xr",discard,thunksym
+thunksym:
+    mov w0, #2
+    ret
+
+    .section .text,"xr",discard,altsym
+    .globl altsym
+altsym:
+    mov w0, #1
+    ret
