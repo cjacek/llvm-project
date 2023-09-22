@@ -100,6 +100,17 @@ void ArchiveFile::parse() {
   // Parse a MemoryBufferRef as an archive file.
   file = CHECK(Archive::create(mb), this);
 
+  if (ctx.config.machine == ARM64EC) {
+    auto symbols = file->ec_symbols();
+    if (!symbols)
+      fatal("Reading EC symbols tailed: " + toString(symbols.takeError()));
+    if (!symbols->empty()) {
+      for (const Archive::Symbol &sym : *symbols)
+        ctx.symtab.addLazyArchive(this, sym);
+      return;
+    }
+  }
+
   // Read the symbol table to construct Lazy objects.
   for (const Archive::Symbol &sym : file->symbols())
     ctx.symtab.addLazyArchive(this, sym);
