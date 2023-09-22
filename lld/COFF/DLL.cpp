@@ -454,7 +454,7 @@ public:
   }
 
   void getBaserels(std::vector<Baserel> *res) override {
-    res->emplace_back(rva + 1, ctx.config.machine);
+    res->emplace_back(rva + 1, getMachine());
   }
 
   Defined *imp = nullptr;
@@ -479,7 +479,7 @@ public:
   }
 
   void getBaserels(std::vector<Baserel> *res) override {
-    res->emplace_back(rva + 4, ctx.config.machine);
+    res->emplace_back(rva + 4, getMachine());
   }
 
   Chunk *desc = nullptr;
@@ -801,6 +801,12 @@ std::vector<Chunk *> DelayLoadContents::getDataChunks() {
   return v;
 }
 
+std::vector<Chunk *> DelayLoadContents::getRdataChunks() {
+  std::vector<Chunk *> v;
+  v.insert(v.end(), auxIat.begin(), auxIat.end());
+  return v;
+}
+
 uint64_t DelayLoadContents::getDirSize() {
   return dirs.size() * sizeof(delay_import_directory_table_entry);
 }
@@ -867,11 +873,28 @@ void DelayLoadContents::create(Defined *h) {
     unwindinfo.push_back(unwind);
   // Add null terminator.
   dirs.push_back(make<NullChunk>(sizeof(delay_import_directory_table_entry)));
+
+  if (ctx.config.machine == ARM64EC) {
+    std::vector<std::vector<DefinedImportData *>> av =
+        binImports(ctx, ECImports);
+    for (std::vector<DefinedImportData *> &syms : av) {
+      for (DefinedImportData *s : syms) {
+        auto chunk = make<ECImportChunk>(s->file);
+        auxIat.push_back(chunk);
+        s->setLocation(chunk);
+      }
+      auxIat.push_back(make<NullChunk>(ctx.config.wordsize));
+    }
+
+    if (!auxIat.empty())
+      auxIatCopyChunk = make<AuxIATCopyChunk>(auxIat);
+  }
 }
 
 Chunk *DelayLoadContents::newTailMergeChunk(Chunk *dir) {
   switch (ctx.config.machine) {
   case AMD64:
+  case ARM64EC:
     return make<TailMergeChunkX64>(dir, helper);
   case I386:
     return make<TailMergeChunkX86>(ctx, dir, helper);
@@ -907,6 +930,7 @@ Chunk *DelayLoadContents::newThunkChunk(DefinedImportData *s,
                                         Chunk *tailMerge) {
   switch (ctx.config.machine) {
   case AMD64:
+  case ARM64EC:
     return make<ThunkChunkX64>(s, tailMerge);
   case I386:
     return make<ThunkChunkX86>(ctx, s, tailMerge);
