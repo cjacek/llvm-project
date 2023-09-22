@@ -144,12 +144,24 @@ private:
 
 class ECImportChunk : public NonSectionChunk {
 public:
-  explicit ECImportChunk() { setAlignment(sizeof(uint64_t)); }
+  explicit ECImportChunk(ImportFile *file) : file(file) {
+    setAlignment(sizeof(uint64_t));
+  }
   size_t getSize() const override { return sizeof(uint64_t); }
 
   void writeTo(uint8_t *buf) const override {
-    write64le(buf, 0); // FIXME
+    write64le(buf, file->ECThunk
+                       ? file->ECThunk->getRVA() + file->ctx.config.imageBase
+                       : 0);
   }
+
+  void getBaserels(std::vector<Baserel> *res) override {
+    if (file->ECThunk)
+      res->emplace_back(rva, file->ctx.config.machine);
+  }
+
+private:
+  ImportFile *file;
 };
 
 static std::vector<std::vector<DefinedImportData *>>
@@ -731,7 +743,7 @@ void IdataContents::create(COFFLinkerContext &ctx) {
         binImports(ctx, ECImports);
     for (std::vector<DefinedImportData *> &syms : av) {
       for (DefinedImportData *s : syms) {
-        auto chunk = make<ECImportChunk>();
+        auto chunk = make<ECImportChunk>(s->file);
         auxIat.push_back(chunk);
         s->setLocation(chunk);
       }
