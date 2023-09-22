@@ -40,11 +40,16 @@ public:
 class DelayLoadContents {
 public:
   DelayLoadContents(COFFLinkerContext &ctx) : ctx(ctx) {}
-  void add(DefinedImportData *sym) { imports.push_back(sym); }
+  void add(ImportFile *file) {
+    imports.push_back(file->impSym);
+    if (file->impECSym)
+      ECImports.push_back(file->impECSym);
+  }
   bool empty() { return imports.empty(); }
   void create(Defined *helper);
   std::vector<Chunk *> getChunks();
   std::vector<Chunk *> getDataChunks();
+  std::vector<Chunk *> getRdataChunks();
   ArrayRef<Chunk *> getCodeChunks() { return thunks; }
   ArrayRef<Chunk *> getCodePData() { return pdata; }
   ArrayRef<Chunk *> getCodeUnwindInfo() { return unwindinfo; }
@@ -60,6 +65,7 @@ private:
 
   Defined *helper;
   std::vector<DefinedImportData *> imports;
+  std::vector<DefinedImportData *> ECImports;
   std::vector<Chunk *> dirs;
   std::vector<Chunk *> moduleHandles;
   std::vector<Chunk *> addresses;
@@ -69,6 +75,7 @@ private:
   std::vector<Chunk *> pdata;
   std::vector<Chunk *> unwindinfo;
   std::vector<Chunk *> dllNames;
+  std::vector<Chunk *> auxIat;
 
   COFFLinkerContext &ctx;
 };

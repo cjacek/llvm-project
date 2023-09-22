@@ -1250,7 +1250,7 @@ void Writer::createImportTables() {
       if (!file->thunkSym)
         fatal("cannot delay-load " + toString(file) +
               " due to import of data: " + toString(ctx, *impSym));
-      delayIdata.add(impSym);
+      delayIdata.add(file);
     } else {
       idata.add(impSym);
     }
@@ -1297,6 +1297,8 @@ void Writer::appendImportThunks() {
       textSec->addChunk(c);
     for (Chunk *c : delayIdata.getCodePData())
       pdataSec->addChunk(c);
+    for (Chunk *c : delayIdata.getRdataChunks())
+      rdataSec->addChunk(c);
     for (Chunk *c : delayIdata.getCodeUnwindInfo())
       rdataSec->addChunk(c);
   }

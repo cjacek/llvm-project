@@ -2352,6 +2352,8 @@ void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
       config->delayLoads.insert(StringRef(arg->getValue()).lower());
       if (config->machine == I386) {
         config->delayLoadHelper = addUndefined("___delayLoadHelper2@8");
+      } else if (isArm64EC(config->machine)) {
+        config->delayLoadHelper = addUndefined("#__delayLoadHelper2");
       } else {
         config->delayLoadHelper = addUndefined("__delayLoadHelper2");
       }
