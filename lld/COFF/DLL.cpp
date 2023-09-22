@@ -424,7 +424,7 @@ public:
   }
 
   void getBaserels(std::vector<Baserel> *res) override {
-    res->emplace_back(rva + 1, ctx.config.machine);
+    res->emplace_back(rva + 1, getMachine());
   }
 
   Defined *imp = nullptr;
@@ -449,7 +449,7 @@ public:
   }
 
   void getBaserels(std::vector<Baserel> *res) override {
-    res->emplace_back(rva + 4, ctx.config.machine);
+    res->emplace_back(rva + 4, getMachine());
   }
 
   Chunk *desc = nullptr;
@@ -769,6 +769,12 @@ std::vector<Chunk *> DelayLoadContents::getDataChunks() {
   return v;
 }
 
+std::vector<Chunk *> DelayLoadContents::getRdataChunks() {
+  std::vector<Chunk *> v;
+  v.insert(v.end(), auxIat.begin(), auxIat.end());
+  return v;
+}
+
 uint64_t DelayLoadContents::getDirSize() {
   return dirs.size() * sizeof(delay_import_directory_table_entry);
 }
@@ -807,6 +813,12 @@ void DelayLoadContents::create(Defined *h) {
         s->loadThunkSym =
             cast<DefinedSynthetic>(ctx.symtab.addSynthetic(symName, t));
       }
+
+      if (s->file->impECSym) {
+        auto chunk = make<ECImportChunk>(s->file);
+        auxIat.push_back(chunk);
+        s->file->impECSym->setLocation(chunk);
+      }
     }
     thunks.push_back(tm);
     if (pdataChunk)
@@ -817,6 +829,8 @@ void DelayLoadContents::create(Defined *h) {
     // Terminate with null values.
     addresses.push_back(make<NullChunk>(8));
     names.push_back(make<NullChunk>(8));
+    if (ctx.config.machine == ARM64EC)
+      auxIat.push_back(make<NullChunk>(8));
 
     for (int i = 0, e = syms.size(); i < e; ++i)
       syms[i]->setLocation(addresses[base + i]);
@@ -840,6 +854,7 @@ void DelayLoadContents::create(Defined *h) {
 Chunk *DelayLoadContents::newTailMergeChunk(Chunk *dir) {
   switch (ctx.config.machine) {
   case AMD64:
+  case ARM64EC:
     return make<TailMergeChunkX64>(dir, helper);
   case I386:
     return make<TailMergeChunkX86>(ctx, dir, helper);
@@ -875,6 +890,7 @@ Chunk *DelayLoadContents::newThunkChunk(DefinedImportData *s,
                                         Chunk *tailMerge) {
   switch (ctx.config.machine) {
   case AMD64:
+  case ARM64EC:
     return make<ThunkChunkX64>(s, tailMerge);
   case I386:
     return make<ThunkChunkX86>(ctx, s, tailMerge);
