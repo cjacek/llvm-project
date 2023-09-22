@@ -32,7 +32,7 @@ class Generator(object):
 |*                                                                            *|
 |* Automatically generated file, do not edit!                                 *|
 |*                                                                            *|
-\*===----------------------------------------------------------------------===*/
+\\*===----------------------------------------------------------------------===*/
 
 namespace clang {
 namespace tooling {
