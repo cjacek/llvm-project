@@ -101,6 +101,8 @@ public:
 
   std::unique_ptr<llvm::TarWriter> tar; // for /linkrepro
 
+  void pullImportThunkSymbols();
+
 private:
   // Searches a file from search paths.
   std::optional<StringRef> findFileIfNew(StringRef filename);
