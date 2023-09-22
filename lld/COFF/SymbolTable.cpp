@@ -68,6 +68,8 @@ void SymbolTable::addFile(InputFile *file) {
       ctx.bitcodeFileInstances.push_back(f);
     } else if (auto *f = dyn_cast<ImportFile>(file)) {
       ctx.importFileInstances.push_back(f);
+      if (f->ECThunk)
+        ctx.driver.pullImportThunkSymbols();
     }
   }
 
@@ -574,6 +576,14 @@ std::pair<Symbol *, bool> SymbolTable::insert(StringRef name, InputFile *file) {
 
 void SymbolTable::addEntryThunk(Symbol *from, Symbol *to) {
   entryThunks.push_back({from, to});
+}
+
+void SymbolTable::addExitThunk(Symbol *from, Symbol *to) {
+  exitThunks[from] = to;
+}
+
+Symbol *SymbolTable::findExitThunk(Symbol *from) const {
+  return exitThunks.lookup(from);
 }
 
 void SymbolTable::initializeEntryThunks() {
