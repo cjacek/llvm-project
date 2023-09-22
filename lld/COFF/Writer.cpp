@@ -1240,6 +1240,9 @@ void Writer::appendImportThunks() {
       if (chunk->live)
         textSec->addChunk(chunk);
     }
+
+    if (file->ECThunk)
+      textSec->addChunk(file->ECThunk);
   }
 
   if (!delayIdata.empty()) {

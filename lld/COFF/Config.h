@@ -165,6 +165,8 @@ struct Configuration {
   std::set<std::string> delayLoads;
   std::map<std::string, int> dllOrder;
   Symbol *delayLoadHelper = nullptr;
+  Symbol *arm64ECIcallHelper = nullptr;
+  Symbol *arm64XDispatchIcall = nullptr;
 
   bool saveTemps = false;
 
