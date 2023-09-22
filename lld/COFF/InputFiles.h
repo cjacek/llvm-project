@@ -343,10 +343,13 @@ public:
 
   static bool classof(const InputFile *f) { return f->kind() == ImportKind; }
 
+  Symbol *findECExitThunkSymbol() const;
+
   DefinedImportData *impSym = nullptr;
   DefinedImportData *impECSym = nullptr;
   Symbol *thunkSym = nullptr;
   Symbol *auxThunkSym = nullptr;
+  Chunk *ECThunk = nullptr;
   std::string dllName;
 
 private:

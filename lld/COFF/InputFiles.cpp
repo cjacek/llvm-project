@@ -187,6 +187,8 @@ void ObjFile::initializeECThunks() {
         ctx.symtab.addEntryThunk(getSymbol(entry->src), getSymbol(entry->dst));
         break;
       case Arm64ECThunkType::Exit:
+        ctx.symtab.addExitThunk(getSymbol(entry->src), getSymbol(entry->dst));
+        break;
       case Arm64ECThunkType::GuestExit:
         break;
       default:
@@ -1079,8 +1081,22 @@ void ImportFile::parse() {
       StringRef auxThunkName =
           saver().save(*getArm64ECMangledFunctionName(name));
       auxThunkSym = ctx.symtab.addImportThunk(auxThunkName, impECSym, ARM64EC);
+
+      ECThunk = make<ImportThunkChunkARM64EC>(this);
     }
   }
+}
+
+Symbol *ImportFile::findECExitThunkSymbol() const {
+  if (!ECThunk)
+    return nullptr;
+  if (Symbol *sym = ctx.symtab.findExitThunk(impECSym))
+    return sym;
+  if (Symbol *sym = ctx.symtab.findExitThunk(thunkSym))
+    return sym;
+  if (Symbol *sym = ctx.symtab.findExitThunk(impSym))
+    return sym;
+  return nullptr;
 }
 
 BitcodeFile::BitcodeFile(COFFLinkerContext &ctx, MemoryBufferRef mb,

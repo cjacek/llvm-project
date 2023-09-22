@@ -1346,6 +1346,13 @@ void LinkerDriver::maybeMakeECThunk(StringRef name, Symbol *&sym) {
   }
 }
 
+void LinkerDriver::pullImportThunkSymbols() {
+  if (!ctx.config.arm64ECIcallHelper)
+    ctx.config.arm64ECIcallHelper = addUndefined("__icall_helper_arm64ec");
+  if (!ctx.config.arm64XDispatchIcall)
+    ctx.config.arm64XDispatchIcall = addUndefined("__os_arm64x_dispatch_icall");
+}
+
 // In MinGW, if no symbols are chosen to be exported, then all symbols are
 // automatically exported by default. This behavior can be forced by the
 // -export-all-symbols option, so that it happens even when exports are
