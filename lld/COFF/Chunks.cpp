@@ -814,6 +814,31 @@ void ImportThunkChunkARM64::writeTo(uint8_t *buf) const {
   applyArm64Ldr(buf + 4, off);
 }
 
+ImportThunkChunkARM64EC::ImportThunkChunkARM64EC(ImportFile *file)
+    : ImportThunkChunk(file->ctx, file->impSym), file(file) {}
+
+void ImportThunkChunkARM64EC::writeTo(uint8_t *buf) const {
+  memcpy(buf, importThunkARM64EC, sizeof(importThunkARM64EC));
+  applyArm64Addr(buf, file->impSym->getRVA(), rva, 12);
+  applyArm64Ldr(buf + 4, file->impSym->getRVA() & 0xfff);
+
+  uint32_t exitThunkRVA = 0;
+  if (Symbol *exitThunkSym = file->findECExitThunkSymbol())
+    exitThunkRVA = cast<Defined>(exitThunkSym)->getRVA();
+  else
+    log("exit thunk for " + file->impSym->getName() + " not found");
+  applyArm64Addr(buf + 8, exitThunkRVA, rva + 8, 12);
+  applyArm64Imm(buf + 12, exitThunkRVA & 0xfff, 0);
+
+  int64_t diff =
+      cast<Defined>(file->ctx.config.arm64ECIcallHelper)->getRVA() - rva - 16;
+  if (!isInt<28>(diff)) {
+    error("FIXME: __icall_helper_arm64ec needs range extension thunk");
+    return;
+  }
+  applyArm64Branch26(buf + 16, diff);
+}
+
 // A Thumb2, PIC, non-interworking range extension thunk.
 const uint8_t armThunk[] = {
     0x40, 0xf2, 0x00, 0x0c, // P:  movw ip,:lower16:S - (P + (L1-P) + 4)
@@ -1000,16 +1025,7 @@ void BaserelChunk::writeTo(uint8_t *buf) const {
 }
 
 uint8_t Baserel::getDefaultType(llvm::COFF::MachineTypes machine) {
-  switch (machine) {
-  case AMD64:
-  case ARM64:
-    return IMAGE_REL_BASED_DIR64;
-  case I386:
-  case ARMNT:
-    return IMAGE_REL_BASED_HIGHLOW;
-  default:
-    llvm_unreachable("unknown machine type");
-  }
+  return is64Bit(machine) ? IMAGE_REL_BASED_DIR64 : IMAGE_REL_BASED_HIGHLOW;
 }
 
 MergeChunk::MergeChunk(uint32_t alignment)

@@ -105,8 +105,11 @@ public:
   DefinedImportData *addImportData(StringRef n, ImportFile *f);
   Symbol *addImportThunk(StringRef name, DefinedImportData *s,
                          uint16_t machine);
+  DefinedImportThunk *addImportCheckThunk(StringRef name, ImportFile *file);
   void addLibcall(StringRef name);
   void addEntryThunk(Symbol *from, Symbol *to);
+  void addExitThunk(Symbol *from, Symbol *to);
+  Symbol *findExitThunk(Symbol *from) const;
   void initializeEntryThunks();
 
   void reportDuplicate(Symbol *existing, InputFile *newFile,
@@ -140,6 +143,7 @@ private:
   std::unique_ptr<BitcodeCompiler> lto;
   bool ltoCompilationDone = false;
   std::vector<std::pair<Symbol *, Symbol *>> entryThunks;
+  llvm::DenseMap<Symbol *, Symbol *> exitThunks;
 
   COFFLinkerContext &ctx;
 };

@@ -1239,6 +1239,9 @@ void Writer::appendImportThunks() {
     DefinedImportThunk *thunk = cast<DefinedImportThunk>(file->thunkSym);
     if (file->thunkLive)
       textSec->addChunk(thunk->getChunk());
+
+    if (file->chkECSym)
+      textSec->addChunk(file->chkECSym->getChunk());
   }
 
   if (!delayIdata.empty()) {

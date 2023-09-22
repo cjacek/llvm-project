@@ -190,6 +190,8 @@ void ObjFile::initializeECThunks() {
         ctx.symtab.addEntryThunk(getSymbol(entry->src), getSymbol(entry->dst));
         break;
       case Arm64ECThunkType::Exit:
+        ctx.symtab.addExitThunk(getSymbol(entry->src), getSymbol(entry->dst));
+        break;
       case Arm64ECThunkType::GuestExit:
         break;
       default:
@@ -1072,8 +1074,21 @@ void ImportFile::parse() {
     } else {
       thunkSym = ctx.symtab.addImportThunk(name, impSym, AMD64);
       // FIXME: Add aux IAT symbols.
+
+      StringRef impChkName = saver().save("__impchk_" + name);
+      chkECSym = ctx.symtab.addImportCheckThunk(impChkName, this);
     }
   }
+}
+
+Symbol *ImportFile::findECExitThunkSymbol() const {
+  if (!chkECSym)
+    return nullptr;
+  if (Symbol *sym = ctx.symtab.findExitThunk(thunkSym))
+    return sym;
+  if (Symbol *sym = ctx.symtab.findExitThunk(impSym))
+    return sym;
+  return nullptr;
 }
 
 BitcodeFile::BitcodeFile(COFFLinkerContext &ctx, MemoryBufferRef mb,

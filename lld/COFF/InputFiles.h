@@ -346,8 +346,11 @@ public:
   static bool classof(const InputFile *f) { return f->kind() == ImportKind; }
   MachineTypes getMachineType() const override;
 
+  Symbol *findECExitThunkSymbol() const;
+
   DefinedImportData *impSym = nullptr;
   Symbol *thunkSym = nullptr;
+  DefinedImportThunk *chkECSym = nullptr;
   std::string dllName;
 
 private:
