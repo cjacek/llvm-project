@@ -102,6 +102,7 @@ public:
   std::unique_ptr<llvm::TarWriter> tar; // for /linkrepro
 
   void maybeMakeECThunk(StringRef name, Symbol *&sym);
+  void pullImportThunkSymbols();
 
 private:
   // Searches a file from search paths.

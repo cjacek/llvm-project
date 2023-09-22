@@ -43,16 +43,25 @@ void markLive(COFFLinkerContext &ctx) {
     worklist.push_back(c);
   };
 
-  std::function<void(Symbol *)> addSym = [&](Symbol *b) {
+  std::function<void(Symbol *)> addSym;
+
+  auto addImportFile = [&](ImportFile *file) {
+    file->live = true;
+    if (Symbol *exitThunk = file->findECExitThunkSymbol())
+      addSym(exitThunk);
+  };
+
+  addSym = [&](Symbol *b) {
     if (auto *sym = dyn_cast<DefinedRegular>(b)) {
       enqueue(sym->getChunk());
       if (Symbol *entryThunk = ctx.symtab.findECThunk(b, 1))
         addSym(entryThunk);
-    } else if (auto *sym = dyn_cast<DefinedImportData>(b))
-      sym->file->live = true;
-    else if (auto *sym = dyn_cast<DefinedImportThunk>(b))
-      sym->wrappedSym->file->live = sym->getChunk()->live = true;
-    else if (auto *sym = dyn_cast<DefinedSynthetic>(b)) {
+    } else if (auto *sym = dyn_cast<DefinedImportData>(b)) {
+      addImportFile(sym->file);
+    } else if (auto *sym = dyn_cast<DefinedImportThunk>(b)) {
+      addImportFile(sym->wrappedSym->file);
+      sym->getChunk()->live = true;
+    } else if (auto *sym = dyn_cast<DefinedSynthetic>(b)) {
       Chunk *chunk = sym->getChunk();
       if (chunk && isa<ECThunkChunk>(chunk))
         addSym(cast<ECThunkChunk>(chunk)->target);
