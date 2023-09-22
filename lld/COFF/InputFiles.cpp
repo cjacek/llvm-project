@@ -1063,8 +1063,22 @@ void ImportFile::parse() {
       StringRef auxThunkName =
           saver().save(*getArm64ECMangledFunctionName(name));
       auxThunkSym = ctx.symtab.addImportThunk(auxThunkName, impECSym, ARM64EC);
+
+      ECThunk = make<ImportThunkChunkARM64EC>(this);
     }
   }
+}
+
+Symbol *ImportFile::findECExitThunkSymbol() const {
+  if (!ECThunk)
+    return nullptr;
+  if (Symbol *sym = ctx.symtab.findECThunk(impECSym, Arm64ECThunkType::Exit))
+    return sym;
+  if (Symbol *sym = ctx.symtab.findECThunk(thunkSym, Arm64ECThunkType::Exit))
+    return sym;
+  if (Symbol *sym = ctx.symtab.findECThunk(impSym, Arm64ECThunkType::Exit))
+    return sym;
+  return nullptr;
 }
 
 BitcodeFile::BitcodeFile(COFFLinkerContext &ctx, MemoryBufferRef mb,
