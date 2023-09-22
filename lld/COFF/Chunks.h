@@ -544,6 +544,14 @@ static const uint8_t importThunkARM64[] = {
     0x00, 0x02, 0x1f, 0xd6, // br   x16
 };
 
+static const uint32_t importThunkARM64EC[] = {
+    0x9000000b, // adrp    x11, 0x0
+    0xf940016b, // ldr     x11, [x11]
+    0x9000000a, // adrp    x10, 0x0
+    0x9100014a, // add     x10, x10, #0x0
+    0x14000000  // b       0x0
+};
+
 // Windows-specific.
 // A chunk for DLL import jump table entry. In a final output, its
 // contents will be a JMP instruction to some __imp_ symbol.
@@ -603,6 +611,17 @@ public:
 
 private:
   MachineTypes machine;
+};
+
+class ImportThunkChunkARM64EC : public NonSectionCodeChunk {
+public:
+  explicit ImportThunkChunkARM64EC(ImportFile *file) : file(file) {}
+  size_t getSize() const override { return sizeof(importThunkARM64EC); };
+  MachineTypes getMachine() const override { return ARM64EC; }
+  void writeTo(uint8_t *buf) const override;
+
+private:
+  ImportFile *file;
 };
 
 class RangeExtensionThunkARM : public NonSectionCodeChunk {
