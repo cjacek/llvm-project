@@ -1,0 +1,84 @@
+REQUIRES: x86
+RUN: split-file %s %t.dir && cd %t.dir
+
+RUN: llvm-mc -filetype=obj -triple=x86_64-windows test.s -o test.obj
+RUN: llvm-mc -filetype=obj -triple=x86_64-windows test2.s -o test2.obj
+RUN: llvm-mc -filetype=obj -triple=x86_64-windows test3.s -o test3.obj
+RUN: llvm-mc -filetype=obj -triple=x86_64-windows lib.s -o lib.obj
+RUN: llvm-lib -machine:amd64 -out:slib.lib lib.obj
+
+RUN: lld-link -machine:amd64 -dll -noentry -out:test.dll test.obj slib.lib
+RUN: llvm-readobj --hex-dump=.testref test.dll | FileCheck -check-prefix=TESTREF %s
+TESTREF: 0x180002000 00100000 00100000
+RUN: llvm-readobj --hex-dump=.test test.dll | FileCheck -check-prefix=LOCAL %s
+LOCAL: local
+
+Same, but passing .lib file first.
+RUN: lld-link -machine:amd64 -dll -noentry -out:test-2.dll slib.lib test.obj
+RUN: llvm-readobj --hex-dump=.testref test-2.dll | FileCheck -check-prefix=TESTREF %s
+RUN: llvm-readobj --hex-dump=.test test-2.dll | FileCheck -check-prefix=LOCAL %s
+
+Reference othersym symbol to pull lib.obj object file, testsym is replaced by lib.obj.
+RUN: lld-link -machine:amd64 -dll -noentry -out:test2.dll test2.obj slib.lib
+RUN: llvm-readobj --hex-dump=.test test2.dll | FileCheck -check-prefix=EXTERN %s
+EXTERN-NOT: local
+EXTERN: external
+EXTERN-NOT: local
+
+Same, but passing .lib file first.
+RUN: lld-link -machine:amd64 -dll -noentry -out:test2-2.dll slib.lib test2.obj
+RUN: llvm-readobj --hex-dump=.test test2-2.dll | FileCheck -check-prefix=EXTERN %s
+
+Similar to test2.dll, but othersym is pulled by localsym (previously resolved by
+anti-dependency symbol), which is discarded after bein overriden by lib.obj.
+RUN: lld-link -machine:amd64 -dll -noentry -out:test3.dll test3.obj slib.lib
+RUN: llvm-readobj --hex-dump=.test test3.dll | FileCheck -check-prefix=EXTERN %s
+RUN: lld-link -machine:amd64 -dll -noentry -out:test3-2.dll slib.lib test3.obj
+RUN: llvm-readobj --hex-dump=.test test3-2.dll | FileCheck -check-prefix=EXTERN %s
+
+#--- test.s
+    .weak_anti_dep testsym
+.set testsym, localsym
+
+    .section .testref, "r"
+    .rva localsym
+    .rva testsym
+
+    .section .test,"r",discard,localsym
+localsym:
+    .ascii "local"
+
+#--- test2.s
+    .weak_anti_dep testsym
+.set testsym, localsym
+
+    .section .testref, "r"
+    .rva testsym
+    .rva othersym
+
+    .section .test,"r",discard,localsym
+localsym:
+    .ascii "local"
+
+#--- test3.s
+    .weak_anti_dep testsym
+.set testsym, localsym
+
+    .section .testref, "r"
+    .rva testsym
+
+    .section .test,"r",discard,localsym
+localsym:
+    .ascii "local"
+    .rva othersym
+
+#--- lib.s
+    .globl testsym
+    .section .test,"r",discard,testsym
+testsym:
+    .ascii "external"
+
+    .globl othersym
+    .section .other,"r",discard,othersym
+othersym:
+    .ascii "other"
