@@ -339,6 +339,14 @@ public:
   // Alias pointer points to.
   Symbol *weakAlias = nullptr;
 
+  // ARM64EC treats mangled -> unmangled weak anti-dependency aliases
+  // as a special case. It's allowed for archive symbols to replace
+  // such aliases (while it's not allowed for other weak aliases,
+  // even if they are marked as an anti-dependency).
+  Symbol *ECAlias = nullptr;
+
+  bool isECAlias() { return ECAlias != nullptr; }
+
   // If this symbol is external weak, try to resolve it to a defined
   // symbol by searching the chain of fallback symbols. Returns the symbol if
   // successful, otherwise returns null.
@@ -510,6 +518,10 @@ void replaceSymbol(Symbol *s, ArgT &&... arg) {
          "Not a Symbol");
   bool canInline = s->canInline;
   bool isUsedInRegularObj = s->isUsedInRegularObj;
+  if (auto u = dyn_cast<Undefined>(s)) {
+    if (u->ECAlias && isa<Undefined>(u->ECAlias))
+      cast<Undefined>(u->ECAlias)->ECAlias = nullptr;
+  }
   new (s) T(std::forward<ArgT>(arg)...);
   s->canInline = canInline;
   s->isUsedInRegularObj = isUsedInRegularObj;
