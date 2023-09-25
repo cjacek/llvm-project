@@ -7,24 +7,77 @@ RUN: llvm-mc -filetype=obj -triple=aarch64-windows nsymref.s -o nsymref-aarch64.
 RUN: llvm-mc -filetype=obj -triple=arm64ec-windows sym.s -o sym-arm64ec.obj
 RUN: llvm-mc -filetype=obj -triple=x86_64-windows sym.s -o sym-x86_64.obj
 RUN: llvm-mc -filetype=obj -triple=aarch64-windows nsym.s -o nsym-aarch64.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows test.s -o test.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows test2.s -o test2.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows test3.s -o test3.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows test4.s -o test4.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows test5.s -o test5.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows test-fail.s -o test-fail.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows test-fail2.s -o test-fail2.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows test-fail3.s -o test-fail3.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows testsym.s -o testsym.obj
+RUN: llvm-mc -filetype=obj -triple=x86_64-windows test.s -o test-x86_64.obj
+RUN: llvm-mc -filetype=obj -triple=x86_64-windows test-x1.s -o test-x1.obj
+RUN: llvm-mc -filetype=obj -triple=x86_64-windows testsym.s -o testsym-x86_64.obj
 RUN: llvm-mc -filetype=obj -triple=arm64ec-windows %S/Inputs/loadconfig-arm64ec.s -o loadconfig-arm64ec.obj
 
 RUN: llvm-lib -machine:arm64ec -out:sym-arm64ec.lib sym-arm64ec.obj nsym-aarch64.obj
 RUN: llvm-lib -machine:amd64 -out:sym-x86_64.lib sym-x86_64.obj
+RUN: llvm-lib -machine:arm64ec -out:testsym.lib testsym.obj
+RUN: llvm-lib -machine:amd64 -out:testsym-x64.lib testsym-x86_64.obj
+RUN: llvm-lib -machine:arm64ec -out:testsym2.lib test.obj
 
-Verify that a symbol can be referenced from ECSYMBOLS.
-RUN: lld-link -machine:arm64ec -dll -noentry -out:test.dll symref-arm64ec.obj sym-arm64ec.lib loadconfig-arm64ec.obj
+RUN: lld-link -machine:arm64ec -dll -noentry -out:test.dll test.obj testsym.lib loadconfig-arm64ec.obj
+RUN: llvm-objdump -d test.dll | FileCheck -check-prefix=DISASM %s
+DISASM:      0000000180001000 <.text>:
+DISASM-NEXT: 180001000: d65f03c0     ret
+DISASM-EMPTY:
 
-Verify that a symbol can be referenced from a regular archive map when ECSYMBOLS is absent (using an x86_64 archive).
-RUN: lld-link -machine:arm64ec -dll -noentry -out:test2.dll symref-arm64ec.obj sym-x86_64.lib loadconfig-arm64ec.obj
-
-Verify that both native and EC symbols can be referenced in a hybrid target.
-RUN: lld-link -machine:arm64x -dll -noentry -out:test3.dll symref-arm64ec.obj nsymref-aarch64.obj sym-arm64ec.lib loadconfig-arm64ec.obj
+RUN: llvm-readobj --hex-dump=.test test.dll | FileCheck -check-prefix=TESTSEC %s
+TESTSEC: 0x180004000 00100000
 
 Ensure that an EC symbol is not resolved using a regular symbol map.
 RUN: not lld-link -machine:arm64ec -dll -noentry -out:test-err.dll nsymref-arm64ec.obj sym-arm64ec.lib loadconfig-arm64ec.obj 2>&1 |\
 RUN:              FileCheck --check-prefix=ERR %s
 ERR: error: undefined symbol: nsym
+
+RUN: lld-link -machine:arm64ec -dll -noentry -out:test2.dll test2.obj testsym.lib loadconfig-arm64ec.obj
+RUN: llvm-objdump -d test2.dll | FileCheck -check-prefix=DISASM %s
+RUN: llvm-readobj --hex-dump=.test test2.dll | FileCheck -check-prefix=TESTSEC %s
+
+RUN: llvm-readobj --sections test2.dll | FileCheck -check-prefix=SECS %s
+SECS: Name: .text
+SECS: Name: .test
+SECS-NOT: .thnk
+
+RUN: lld-link -machine:arm64ec -dll -noentry -out:test2-2.dll testsym.lib test2.obj loadconfig-arm64ec.obj
+RUN: llvm-objdump -d test2-2.dll | FileCheck -check-prefix=DISASM %s
+RUN: llvm-readobj --sections test2-2.dll | FileCheck -check-prefix=SECS %s
+RUN: llvm-readobj --hex-dump=.test test2-2.dll | FileCheck -check-prefix=TESTSEC %s
+RUN: llvm-readobj --sections test2-2.dll | FileCheck -check-prefix=SECS %s
+
+RUN: lld-link -machine:arm64ec -dll -noentry -out:test3.dll test3.obj testsym.lib loadconfig-arm64ec.obj
+RUN: llvm-objdump -d test3.dll | FileCheck -check-prefix=DISASM %s
+RUN: llvm-readobj --sections test3.dll | FileCheck -check-prefix=SECS %s
+RUN: llvm-readobj --hex-dump=.test test3.dll | FileCheck -check-prefix=TESTSEC %s
+
+RUN: lld-link -machine:arm64ec -dll -noentry -out:test3.dll testsym.lib test3.obj loadconfig-arm64ec.obj
+RUN: llvm-objdump -d test3.dll | FileCheck -check-prefix=DISASM %s
+RUN: llvm-readobj --sections test3.dll | FileCheck -check-prefix=SECS %s
+RUN: llvm-readobj --hex-dump=.test test3.dll | FileCheck -check-prefix=TESTSEC %s
+
+RUN: lld-link -machine:arm64ec -dll -noentry -out:test4.dll test4.obj testsym.lib loadconfig-arm64ec.obj
+RUN: llvm-objdump -d test3.dll | FileCheck -check-prefix=DISASM %s
+RUN: llvm-readobj --sections test3.dll | FileCheck -check-prefix=SECS %s
+RUN: llvm-readobj --hex-dump=.test test3.dll | FileCheck -check-prefix=TESTSEC %s
+
+RUN: lld-link -machine:arm64ec -dll -noentry -out:test5.dll test5.obj testsym.lib loadconfig-arm64ec.obj
+RUN: llvm-objdump -d test3.dll | FileCheck -check-prefix=DISASM %s
+RUN: llvm-readobj --sections test3.dll | FileCheck -check-prefix=SECS %s
+RUN: llvm-readobj --hex-dump=.test test3.dll | FileCheck -check-prefix=TESTSEC %s
+
+RUN: not lld-link -machine:arm64ec -dll -noentry -out:test-fail.dll test-fail.obj testsym.lib loadconfig-arm64ec.obj
+RUN: not lld-link -machine:arm64ec -dll -noentry -out:test-fail2.dll test-fail2.obj testsym.lib loadconfig-arm64ec.obj
 
 #--- symref.s
     .data
@@ -45,3 +98,75 @@ sym:
      .globl nsym
 nsym:
      .word 0
+
+#--- test.s
+    .section .test, "r"
+    .rva "#testsym"
+
+#--- test2.s
+    .weak_anti_dep testsym
+.set testsym, "#testsym"
+
+    .section .test, "r"
+    .rva testsym
+
+#--- test3.s
+    .weak_anti_dep testsym
+.set testsym, "#testsym"
+    .weak_anti_dep "#testsym"
+.set "#testsym", thunksym
+
+    .section .test, "r"
+    .rva testsym
+
+    .section .thnk,"xr",discard,thunksym
+thunksym:
+    mov w0, #2
+    ret
+
+#--- test4.s
+    .weak testsym
+.set testsym, "#testsym"
+
+    .section .test, "r"
+    .rva testsym
+
+#--- test5.s
+    .weak_anti_dep testsym
+.set testsym, "#testsym"
+    .weak_anti_dep "#testsym"
+.set "#testsym", thunksym
+
+    .section .test, "r"
+    .rva "#testsym"
+
+    .section .thnk,"xr",discard,thunksym
+thunksym:
+    mov w0, #2
+    ret
+
+#--- test-x1.s
+    .section .test, "r"
+    .rva testsym
+
+#--- test-fail.s
+    .section .test, "r"
+    .rva testsym
+
+#--- test-fail2.s
+    .weak_anti_dep "#testsym"
+.set "#testsym", thunksym
+    .section .test, "r"
+    .rva testsym
+
+#--- test-fail3.s
+    .weak_anti_dep testimpsym
+.set testimpsym, "#testsym"
+    .section .test, "r"
+    .rva testimpsym
+
+#--- testsym.s
+    .text
+    .globl "#testsym"
+"#testsym":
+    ret
