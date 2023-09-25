@@ -592,7 +592,9 @@ void SymbolTable::initializeECThunks() {
 Symbol *SymbolTable::addUndefined(StringRef name, InputFile *f,
                                   bool isWeakAlias) {
   auto [s, wasInserted] = insert(name, f);
-  if (wasInserted || (s->isLazy() && isWeakAlias)) {
+  if (wasInserted ||
+      (s->isLazy() && isWeakAlias &&
+       (!isa<Undefined>(s) || !cast<Undefined>(s)->isECAlias()))) {
     replaceSymbol<Undefined>(s, name);
     return s;
   }
@@ -609,10 +611,12 @@ void SymbolTable::addLazyArchive(ArchiveFile *f, const Archive::Symbol &sym) {
     return;
   }
   auto *u = dyn_cast<Undefined>(s);
-  if (!u || u->weakAlias || s->pendingArchiveLoad)
+  if (!u || (u->weakAlias && !u->isECAlias()) || s->pendingArchiveLoad)
     return;
   s->pendingArchiveLoad = true;
   f->addMember(sym);
+  if (u->ECAlias)
+    u->ECAlias->pendingArchiveLoad = true;
 }
 
 void SymbolTable::addLazyObject(InputFile *f, StringRef n) {

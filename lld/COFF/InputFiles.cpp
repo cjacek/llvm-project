@@ -84,6 +84,10 @@ static void checkAndSetWeakAlias(COFFLinkerContext &ctx, InputFile *f,
       // this weak symbol.
       if (ctx.config.allowDuplicateWeak)
         return;
+      // FIXME: This should probably check for anti-dependency, needs more
+      // testing
+      if (ctx.config.machine == ARM64EC)
+        return;
       ctx.symtab.reportDuplicate(source, f);
     }
     u->weakAlias = target;
@@ -443,6 +447,43 @@ void ObjFile::initializeSymbols() {
   DenseMap<StringRef, uint32_t> prevailingSectionMap;
   std::vector<const coff_aux_section_definition *> comdatDefs(
       coffObj->getNumberOfSections() + 1);
+
+  // See a comment for Undefined::isECAlias.
+  // FIXME: This should be implemented nicer, but the whole thing
+  // is still friagle, so I'm planning another pass at it anyway.
+  if (ctx.config.machine == ARM64EC) {
+    for (uint32_t i = 0; i < numSymbols; ++i) {
+      COFFSymbolRef coffSym = check(coffObj->getSymbol(i));
+      if (coffSym.isUndefined() || !coffSym.isWeakExternal())
+        continue;
+      const coff_aux_weak_external *aux = coffSym.getWeakExternal();
+      if (aux->Characteristics != 4 /* IMAGE_WEAK_EXTERN_ANTI_DEPENDENCY */)
+        continue;
+      StringRef name = check(coffObj->getSymbolName(coffSym));
+      std::optional<std::string> mangledName =
+          getArm64ECMangledFunctionName(name);
+      if (!mangledName)
+        continue;
+      uint32_t tagIndex = coffSym.getAux<coff_aux_weak_external>()->TagIndex;
+      COFFSymbolRef targetSym = check(coffObj->getSymbol(tagIndex));
+      if (targetSym.isUndefined() || !targetSym.isWeakExternal())
+        continue;
+      StringRef targetName = check(coffObj->getSymbolName(targetSym));
+      if (*mangledName != targetName)
+        continue;
+
+      Symbol *source = ctx.symtab.addUndefined(name, this, false);
+      Symbol *target = ctx.symtab.addUndefined(targetName, this, false);
+
+      auto s = dyn_cast<Undefined>(source);
+      auto t = dyn_cast<Undefined>(target);
+      if (s && !s->weakAlias && !s->isECAlias() && t && !t->weakAlias &&
+          !t->isECAlias()) {
+        t->ECAlias = s;
+        s->ECAlias = t;
+      }
+    }
+  }
 
   for (uint32_t i = 0; i < numSymbols; ++i) {
     COFFSymbolRef coffSym = check(coffObj->getSymbol(i));
