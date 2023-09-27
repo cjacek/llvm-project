@@ -426,13 +426,13 @@ void LinkerDriver::parseDirectives(InputFile *file) {
         enqueuePath(*path, false, false);
       break;
     case OPT_entry:
-      ctx.config.entry = addUndefined(mangle(arg->getValue()));
+      ctx.config.entry = addUndefined(mangle(arg->getValue()), true);
       break;
     case OPT_failifmismatch:
       checkFailIfMismatch(arg->getValue(), file);
       break;
     case OPT_incl:
-      addUndefined(arg->getValue());
+      addUndefined(arg->getValue(), true);
       break;
     case OPT_manifestdependency:
       ctx.config.manifestDependencies.insert(arg->getValue());
@@ -707,11 +707,22 @@ void LinkerDriver::addLibSearchPaths() {
   }
 }
 
-Symbol *LinkerDriver::addUndefined(StringRef name) {
+Symbol *LinkerDriver::addUndefined(StringRef name, bool aliasEC) {
   Symbol *b = ctx.symtab.addUndefined(name);
   if (!b->isGCRoot) {
     b->isGCRoot = true;
     ctx.config.gcroot.push_back(b);
+  }
+  if (aliasEC && ctx.config.machine == ARM64EC && isa<Undefined>(b)) {
+    auto u = cast<Undefined>(b);
+    if (!u->weakAlias) {
+      StringRef mangledName = saver().save(getArm64ECMangledFunctionName(name));
+      u->weakAlias = ctx.symtab.addUndefined(mangledName);
+      if (Undefined *ut = dyn_cast<Undefined>(u->weakAlias)) {
+        u->ECAlias = ut;
+        ut->ECAlias = u;
+      }
+    }
   }
   return b;
 }
@@ -2292,22 +2303,22 @@ void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
   {
     llvm::TimeTraceScope timeScope("Entry point");
     if (auto *arg = args.getLastArg(OPT_entry)) {
-      config->entry = addUndefined(mangle(arg->getValue()));
+      config->entry = addUndefined(mangle(arg->getValue()), true);
     } else if (!config->entry && !config->noEntry) {
       if (args.hasArg(OPT_dll)) {
         StringRef s = (config->machine == I386) ? "__DllMainCRTStartup@12"
                                                 : "_DllMainCRTStartup";
-        config->entry = addUndefined(s);
+        config->entry = addUndefined(s, true);
       } else if (config->driverWdm) {
         // /driver:wdm implies /entry:_NtProcessStartup
-        config->entry = addUndefined(mangle("_NtProcessStartup"));
+        config->entry = addUndefined(mangle("_NtProcessStartup"), true);
       } else {
         // Windows specific -- If entry point name is not given, we need to
         // infer that from user-defined entry name.
         StringRef s = findDefaultEntry();
         if (s.empty())
           fatal("entry point must be defined");
-        config->entry = addUndefined(s);
+        config->entry = addUndefined(s, true);
         log("Entry name inferred: " + s);
       }
     }
@@ -2439,6 +2450,8 @@ void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
     if (ctx.symtab.findUnderscore("__buildid"))
       ctx.symtab.addUndefined(mangle("__buildid"));
 
+  run();
+
   // This code may add new undefined symbols to the link, which may enqueue more
   // symbol resolution tasks, so we need to continue executing tasks until we
   // converge.
@@ -2454,7 +2467,7 @@ void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
       for (Export &e : config->exports) {
         if (!e.forwardTo.empty())
           continue;
-        e.sym = addUndefined(e.name);
+        e.sym = addUndefined(e.name, true);
         if (e.source != ExportSource::Directives)
           e.symbolName = mangleMaybe(e.sym);
       }
