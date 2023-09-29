@@ -1352,6 +1352,7 @@ static codeview::CPUType toCodeViewMachine(COFF::MachineTypes machine) {
   case COFF::IMAGE_FILE_MACHINE_ARM:
     return codeview::CPUType::ARM7;
   case COFF::IMAGE_FILE_MACHINE_ARM64:
+  case COFF::IMAGE_FILE_MACHINE_ARM64EC:
     return codeview::CPUType::ARM64;
   case COFF::IMAGE_FILE_MACHINE_ARMNT:
     return codeview::CPUType::ARMNT;
