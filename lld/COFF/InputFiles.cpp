@@ -108,10 +108,15 @@ void ArchiveFile::parse() {
   if (ctx.config.machine == ARM64EC) {
     auto symbols = file->ec_symbols();
     if (!symbols)
-      fatal("Reading EC symbols tailed: " + toString(symbols.takeError()));
+      fatal("Reading EC symbols failed: " + toString(symbols.takeError()));
     if (!symbols->empty()) {
       for (const Archive::Symbol &sym : *symbols)
         ctx.symtab.addLazyArchive(this, sym);
+      for (const Archive::Symbol &sym : *symbols) {
+        if (std::optional<std::string> demangledName =
+                getArm64ECDemangledFunctionName(sym.getName()))
+          ctx.symtab.addLazyArchive(this, sym, saver().save(*demangledName));
+      }
       return;
     }
   }
