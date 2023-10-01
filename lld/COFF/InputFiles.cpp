@@ -111,6 +111,12 @@ void ArchiveFile::parse() {
     if (!symbols->empty()) {
       for (const Archive::Symbol &sym : *symbols)
         ctx.symtab.addLazyArchive(this, sym);
+      for (const Archive::Symbol &sym : *symbols) {
+	if (isArm64ECMangledFunctionName(sym.getName())) {
+	    StringRef unmangledName = saver().save(getArm64ECDemangledFunctionName(sym.getName()));
+	    ctx.symtab.addLazyArchive(this, sym, unmangledName);
+	}
+      }
       return;
     }
   }
