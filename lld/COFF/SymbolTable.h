@@ -92,7 +92,11 @@ public:
   Symbol *addAbsolute(StringRef n, uint64_t va);
 
   Symbol *addUndefined(StringRef name, InputFile *f, bool isWeakAlias);
-  void addLazyArchive(ArchiveFile *f, const Archive::Symbol &sym);
+  void addLazyArchive(ArchiveFile *f, const Archive::Symbol &sym,
+                      StringRef name);
+  void addLazyArchive(ArchiveFile *f, const Archive::Symbol &sym) {
+    addLazyArchive(f, sym, sym.getName());
+  }
   void addLazyObject(InputFile *f, StringRef n);
   void addLazyDLLSymbol(DLLFile *f, DLLFile::Symbol *sym, StringRef n);
   Symbol *addAbsolute(StringRef n, COFFSymbolRef s);

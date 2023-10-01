@@ -635,8 +635,8 @@ Symbol *SymbolTable::addUndefined(StringRef name, InputFile *f,
   return s;
 }
 
-void SymbolTable::addLazyArchive(ArchiveFile *f, const Archive::Symbol &sym) {
-  StringRef name = sym.getName();
+void SymbolTable::addLazyArchive(ArchiveFile *f, const Archive::Symbol &sym,
+                                 StringRef name) {
   auto [s, wasInserted] = insert(name);
   if (wasInserted) {
     replaceSymbol<LazyArchive>(s, f, sym);
