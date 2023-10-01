@@ -112,7 +112,11 @@ void ArchiveFile::parse() {
     if (!symbols.empty()) {
       for (const Archive::Symbol &sym : symbols)
         ctx.symtab.addLazyArchive(this, sym);
-
+      for (const Archive::Symbol &sym : symbols) {
+        if (std::optional<std::string> demangledName =
+                getArm64ECDemangledFunctionName(sym.getName()))
+          ctx.symtab.addLazyArchive(this, sym, saver().save(*demangledName));
+      }
       // Read both EC and native symbols on ARM64X.
       if (ctx.config.machine != ARM64X)
         return;
