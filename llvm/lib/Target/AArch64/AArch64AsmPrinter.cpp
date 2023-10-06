@@ -1120,27 +1120,33 @@ void AArch64AsmPrinter::emitFunctionEntryLabel() {
             cast<MDString>(ECMangled->getOperand(0))->getString();
         MCSymbol *ECMangledSym =
             MMI->getContext().getOrCreateSymbol(ECMangledStr);
-        OutStreamer->emitSymbolAttribute(UnmangledSym, MCSA_WeakAntiDep);
-        OutStreamer->emitAssignment(
-            UnmangledSym,
-            MCSymbolRefExpr::create(ECMangledSym, MCSymbolRefExpr::VK_WEAKREF,
-                                    MMI->getContext()));
-        OutStreamer->emitSymbolAttribute(ECMangledSym, MCSA_WeakAntiDep);
-        OutStreamer->emitAssignment(
-            ECMangledSym,
-            MCSymbolRefExpr::create(CurrentFnSym, MCSymbolRefExpr::VK_WEAKREF,
-                                    MMI->getContext()));
+        if (UnmangledSym->isUndefined()) {
+          OutStreamer->emitSymbolAttribute(UnmangledSym, MCSA_WeakAntiDep);
+          OutStreamer->emitAssignment(
+              UnmangledSym,
+              MCSymbolRefExpr::create(ECMangledSym, MCSymbolRefExpr::VK_WEAKREF,
+                                      MMI->getContext()));
+        }
+        if (ECMangledSym->isUndefined()) {
+          OutStreamer->emitSymbolAttribute(ECMangledSym, MCSA_WeakAntiDep);
+          OutStreamer->emitAssignment(
+              ECMangledSym,
+              MCSymbolRefExpr::create(CurrentFnSym, MCSymbolRefExpr::VK_WEAKREF,
+                                      MMI->getContext()));
+        }
         return;
       } else {
         StringRef UnmangledStr =
             cast<MDString>(Unmangled->getOperand(0))->getString();
         MCSymbol *UnmangledSym =
             MMI->getContext().getOrCreateSymbol(UnmangledStr);
-        OutStreamer->emitSymbolAttribute(UnmangledSym, MCSA_WeakAntiDep);
-        OutStreamer->emitAssignment(
-            UnmangledSym,
-            MCSymbolRefExpr::create(CurrentFnSym, MCSymbolRefExpr::VK_WEAKREF,
-                                    MMI->getContext()));
+        if (UnmangledSym->isUndefined()) {
+          OutStreamer->emitSymbolAttribute(UnmangledSym, MCSA_WeakAntiDep);
+          OutStreamer->emitAssignment(
+              UnmangledSym,
+              MCSymbolRefExpr::create(CurrentFnSym, MCSymbolRefExpr::VK_WEAKREF,
+                                      MMI->getContext()));
+        }
         return;
       }
     }

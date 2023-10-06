@@ -44,8 +44,6 @@ define void @varargs_caller() nounwind {
 ; CHECK-NEXT:    stp xzr, x30, [sp, #24] // 8-byte Folded Spill
 ; CHECK-NEXT:    stp x9, x8, [sp]
 ; CHECK-NEXT:    str xzr, [sp, #16]
-; CHECK-NEXT:    .weak_anti_dep varargs_callee
-; CHECK-NEXT:  .set varargs_callee, "#varargs_callee"@WEAKREF
 ; CHECK-NEXT:    .weak_anti_dep "#varargs_callee"
 ; CHECK-NEXT:  .set "#varargs_callee", varargs_callee@WEAKREF
 ; CHECK-NEXT:    bl "#varargs_callee"
@@ -85,8 +83,6 @@ define void @varargs_many_argscalleer() nounwind {
 ; CHECK-NEXT:    str x30, [sp, #48] // 8-byte Folded Spill
 ; CHECK-NEXT:    stp x9, x8, [sp]
 ; CHECK-NEXT:    stp q0, q0, [sp, #16]
-; CHECK-NEXT:    .weak_anti_dep varargs_many_argscallee
-; CHECK-NEXT:  .set varargs_many_argscallee, "#varargs_many_argscallee"@WEAKREF
 ; CHECK-NEXT:    .weak_anti_dep "#varargs_many_argscallee"
 ; CHECK-NEXT:  .set "#varargs_many_argscallee", varargs_many_argscallee@WEAKREF
 ; CHECK-NEXT:    bl "#varargs_many_argscallee"

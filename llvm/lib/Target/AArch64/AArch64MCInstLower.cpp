@@ -71,17 +71,22 @@ MCSymbol *AArch64MCInstLower::GetGlobalValueSymbol(const GlobalValue *GV,
             getArm64ECMangledFunctionName(Name.str())) {
       MCSymbol *MangledSym = Ctx.getOrCreateSymbol(MangledName.value());
       if (!cast<Function>(GV)->hasMetadata("arm64ec_hasguestexit")) {
-        Printer.OutStreamer->emitSymbolAttribute(Printer.getSymbol(GV),
-                                                 MCSA_WeakAntiDep);
-        Printer.OutStreamer->emitAssignment(
-            Printer.getSymbol(GV),
-            MCSymbolRefExpr::create(MangledSym, MCSymbolRefExpr::VK_WEAKREF,
-                                    Ctx));
-        Printer.OutStreamer->emitSymbolAttribute(MangledSym, MCSA_WeakAntiDep);
-        Printer.OutStreamer->emitAssignment(
-            MangledSym,
-            MCSymbolRefExpr::create(Printer.getSymbol(GV),
-                                    MCSymbolRefExpr::VK_WEAKREF, Ctx));
+        MCSymbol *UnmangledSym = Printer.getSymbol(GV);
+        if (UnmangledSym->isUndefined()) {
+          Printer.OutStreamer->emitSymbolAttribute(UnmangledSym,
+                                                   MCSA_WeakAntiDep);
+          Printer.OutStreamer->emitAssignment(
+              UnmangledSym, MCSymbolRefExpr::create(
+                                MangledSym, MCSymbolRefExpr::VK_WEAKREF, Ctx));
+        }
+        if (MangledSym->isUndefined()) {
+          Printer.OutStreamer->emitSymbolAttribute(MangledSym,
+                                                   MCSA_WeakAntiDep);
+          Printer.OutStreamer->emitAssignment(
+              MangledSym,
+              MCSymbolRefExpr::create(Printer.getSymbol(GV),
+                                      MCSymbolRefExpr::VK_WEAKREF, Ctx));
+        }
       }
 
       if (TargetFlags & AArch64II::MO_ARM64EC_CALLMANGLE)
