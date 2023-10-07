@@ -774,12 +774,12 @@ static const uint8_t ecThunkCode[] = {
 
 class ECThunkChunk : public NonSectionChunk {
 public:
-  explicit ECThunkChunk(COFFLinkerContext &ctx, SectionChunk *sc);
+  explicit ECThunkChunk(COFFLinkerContext &ctx, DefinedRegular *targetSym);
   size_t getSize() const override { return sizeof(ecThunkCode); };
   void writeTo(uint8_t *buf) const override;
   MachineTypes getMachine() const override { return AMD64; }
 
-  SectionChunk *target;
+  DefinedRegular *target;
 };
 
 // MinGW specific, for the "automatic import of variables from DLLs" feature.

@@ -496,8 +496,7 @@ void SymbolTable::resolveRemainingUndefines() {
         continue;
       }
 
-      auto chunk =
-          make<ECThunkChunk>(ctx, cast<DefinedRegular>(targetSym)->getChunk());
+      auto chunk = make<ECThunkChunk>(ctx, cast<DefinedRegular>(targetSym));
       replaceSymbol<DefinedSynthetic>(undef, name, chunk);
     }
   }

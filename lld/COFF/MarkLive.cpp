@@ -62,7 +62,7 @@ void markLive(COFFLinkerContext &ctx) {
     } else if (auto *sym = dyn_cast<DefinedSynthetic>(b)) {
       Chunk *chunk = sym->getChunk();
       if (chunk && isa<ECThunkChunk>(chunk))
-        enqueue(cast<ECThunkChunk>(chunk)->target);
+        addSym(cast<ECThunkChunk>(chunk)->target);
     }
   };
 

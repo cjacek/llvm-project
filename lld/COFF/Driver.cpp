@@ -1390,7 +1390,7 @@ void LinkerDriver::maybeMakeECThunk(StringRef name, Symbol *&sym) {
   sym = addUndefined(saver().save("EXP+#" + name));
   if (isa<Undefined>(sym))
     replaceSymbol<DefinedSynthetic>(sym, sym->getName(),
-                                    make<ECThunkChunk>(ctx, def->getChunk()));
+                                    make<ECThunkChunk>(ctx, def));
 }
 
 void LinkerDriver::pullImportThunkSymbols() {

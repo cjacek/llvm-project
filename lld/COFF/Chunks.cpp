@@ -1087,8 +1087,8 @@ void AbsolutePointerChunk::writeTo(uint8_t *buf) const {
   }
 }
 
-ECThunkChunk::ECThunkChunk(COFFLinkerContext &ctx, SectionChunk *sc)
-    : target(sc) {
+ECThunkChunk::ECThunkChunk(COFFLinkerContext &ctx, DefinedRegular *targetSym)
+    : target(targetSym) {
   ctx.ECThunks.push_back(this);
 }
 

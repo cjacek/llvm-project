@@ -2058,7 +2058,7 @@ void Writer::maybeAddRVATable(SymbolRVASet tableSymbols, StringRef tableSym,
 // Create CHPE metadata chunks.
 void Writer::createECChunks() {
   for (auto iter = ctx.ECThunks.begin(); iter != ctx.ECThunks.end();) {
-    if ((*iter)->target->live) {
+    if ((*iter)->target->getChunk()->live) {
       hexpthkSec->addChunk(*iter);
       iter++;
     } else {
