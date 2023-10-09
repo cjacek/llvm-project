@@ -602,6 +602,8 @@ void SymbolTable::initializeEntryThunks() {
     Symbol *from = find(it.first.first.val());
     if (!from || !isa<Defined>(from) || !isa<Defined>(it.second))
       continue;
+    if (!from->isCOMDAT || cast<DefinedRegular>(from)->getValue())
+      error("non COMDAT symbol '" + it.first.first.val() + "' in hybrid map");
     entryThunkMap[cast<Defined>(from)->getChunk()] =
         cast<Defined>(it.second)->getChunk();
   }
