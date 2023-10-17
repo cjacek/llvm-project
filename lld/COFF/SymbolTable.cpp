@@ -18,6 +18,7 @@
 #include "lld/Common/Timer.h"
 #include "llvm/DebugInfo/DIContext.h"
 #include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Mangler.h"
 #include "llvm/LTO/LTO.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/TimeProfiler.h"
@@ -500,7 +501,15 @@ void SymbolTable::resolveRemainingUndefines() {
     // If we can resolve a symbol by removing __imp_ prefix, do that.
     // This odd rule is for compatibility with MSVC linker.
     if (name.starts_with("__imp_")) {
-      Symbol *imp = find(name.substr(strlen("__imp_")));
+      StringRef impName = name.substr(strlen("__imp_"));
+      if (isArm64EC(ctx.config.machine))
+        impName.consume_front("aux_");
+      Symbol *imp = find(impName);
+      if (isArm64EC(ctx.config.machine) && (!imp || !isa<Defined>(imp))) {
+        if (std::optional<std::string> MangledName =
+                getArm64ECMangledFunctionName(impName))
+          imp = find(*MangledName);
+      }
       if (imp && isa<Defined>(imp)) {
         auto *d = cast<Defined>(imp);
         replaceSymbol<DefinedLocalImport>(sym, ctx, name, d);
