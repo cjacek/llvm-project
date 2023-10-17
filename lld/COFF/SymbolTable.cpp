@@ -537,7 +537,12 @@ void SymbolTable::resolveRemainingUndefines() {
     // If we can resolve a symbol by removing __imp_ prefix, do that.
     // This odd rule is for compatibility with MSVC linker.
     if (name.starts_with("__imp_")) {
-      Symbol *imp = find(name.substr(strlen("__imp_")));
+      StringRef impName = name.substr(strlen("__imp_"));
+      if (isArm64EC(ctx.config.machine))
+        impName.consume_front("aux_");
+      Symbol *imp = find(impName);
+      if (isArm64EC(ctx.config.machine) && (!imp || !isa<Defined>(imp)))
+        imp = find(object::getArm64ECMangledFunctionName(impName));
       if (imp && isa<Defined>(imp)) {
         auto *d = cast<Defined>(imp);
         replaceSymbol<DefinedLocalImport>(sym, ctx, name, d);
