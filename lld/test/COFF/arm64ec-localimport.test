@@ -1,0 +1,61 @@
+REQUIRES: aarch64
+RUN: split-file %s %t.dir && cd %t.dir
+
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows funcs.s -o funcs.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows funcs2.s -o funcs2.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows impsym.s -o impsym.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows impauxsym.s -o impauxsym.obj
+
+RUN: lld-link -machine:arm64ec -dll -noentry funcs.obj impsym.obj -out:impsym.dll
+
+RUN: llvm-readobj --coff-basereloc impsym.dll | FileCheck -check-prefix=RELOCS %s
+RELOCS:       Entry {
+RELOCS-NEXT:    Type: DIR64
+RELOCS-NEXT:    Address: 0x2000
+RELOCS-NEXT:  }
+
+RUN: llvm-readobj --hex-dump=.test impsym.dll | FileCheck -check-prefix=TEST %s
+TEST: 0x180003000 00200000
+
+RUN: llvm-readobj --hex-dump=.rdata impsym.dll | FileCheck -check-prefix=RDATA %s
+RDATA: 0x180002000 00100080 01000000
+
+RUN: lld-link -machine:arm64ec -dll -noentry funcs.obj impauxsym.obj -out:impauxsym.dll
+RUN: llvm-readobj --hex-dump=.test impauxsym.dll | FileCheck -check-prefix=TEST %s
+RUN: llvm-readobj --hex-dump=.rdata impauxsym.dll | FileCheck -check-prefix=RDATA %s
+
+RUN: lld-link -machine:arm64ec -dll -noentry funcs2.obj impsym.obj -out:impsym.dll
+RUN: llvm-readobj --coff-basereloc impsym.dll | FileCheck -check-prefix=RELOCS %s
+RUN: llvm-readobj --hex-dump=.test impsym.dll | FileCheck -check-prefix=TEST %s
+RUN: llvm-readobj --hex-dump=.rdata impsym.dll | FileCheck -check-prefix=RDATA2 %s
+RDATA2: 0x180002000 04100080 01000000
+
+RUN: lld-link -machine:arm64ec -dll -noentry funcs2.obj impauxsym.obj -out:impauxsym.dll
+RUN: llvm-readobj --hex-dump=.test impauxsym.dll | FileCheck -check-prefix=TEST %s
+RUN: llvm-readobj --hex-dump=.rdata impauxsym.dll | FileCheck -check-prefix=RDATA2 %s
+
+#--- funcs.s
+    .text
+    .globl myfunc
+myfunc:
+    ret
+    .globl "#myfunc"
+"#myfunc":
+    ret
+
+#--- funcs2.s
+    .text
+    .globl myfunc2
+myfunc2:
+    ret
+    .globl "#myfunc"
+"#myfunc":
+    ret
+
+#--- impsym.s
+    .section .test, "r"
+    .rva __imp_myfunc
+
+#--- impauxsym.s
+    .section .test, "r"
+    .rva __imp_aux_myfunc
