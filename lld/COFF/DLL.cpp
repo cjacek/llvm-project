@@ -150,13 +150,13 @@ public:
   size_t getSize() const override { return sizeof(uint64_t); }
 
   void writeTo(uint8_t *buf) const override {
-    write64le(buf, file->ECThunk
-                       ? file->ECThunk->getRVA() + file->ctx.config.imageBase
+    write64le(buf, file->chkECSym
+                       ? file->chkECSym->getRVA() + file->ctx.config.imageBase
                        : 0);
   }
 
   void getBaserels(std::vector<Baserel> *res) override {
-    if (file->ECThunk)
+    if (file->chkECSym)
       res->emplace_back(rva, file->ctx.config.machine);
   }
 
