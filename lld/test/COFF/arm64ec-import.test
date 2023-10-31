@@ -82,7 +82,7 @@ RUN: llvm-readobj --hex-dump=.test out2.dll | FileCheck -check-prefix=TESTSEC %s
 RUN: llvm-readobj --hex-dump=.test out4.dll | FileCheck -check-prefix=TESTSEC %s
 TESTSEC:      0x180008000 08500000 08300000 00200000 08100000
 TESTSEC-NEXT: 0x180008010 00300000 00500000 10500000 10300000
-TESTSEC-NEXT: 0x180008020 20500000
+TESTSEC-NEXT: 0x180008020 20500000 14100000
 
 RUN: llvm-readobj --hex-dump=.test out3.dll | FileCheck -check-prefix=TESTSEC-X64 %s
 TESTSEC-X64:      0x180008000 08300000 08300000 00200000 08100000
@@ -147,6 +147,7 @@ arm64ec_data_sym:
     .rva __imp_otherfunc
     .rva __imp_aux_otherfunc
     .rva __imp_myfunc2
+    .rva __impchk_myfunc
 
 #--- arm64ec-stubs.s
     .text

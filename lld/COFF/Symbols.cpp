@@ -126,6 +126,11 @@ DefinedImportThunk::DefinedImportThunk(COFFLinkerContext &ctx, StringRef name,
     : Defined(DefinedImportThunkKind, name), wrappedSym(s),
       data(makeImportThunk(ctx, s, machine)) {}
 
+DefinedImportThunk::DefinedImportThunk(COFFLinkerContext &ctx, StringRef name,
+                                       DefinedImportData *s,
+                                       ImportThunkChunk *chunk)
+    : Defined(DefinedImportThunkKind, name), wrappedSym(s), data(chunk) {}
+
 Defined *Undefined::getWeakAlias() {
   // A weak alias may be a weak alias to another symbol, so check recursively.
   SmallSet<Symbol *, 4> weakChain;
