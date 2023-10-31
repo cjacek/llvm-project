@@ -352,7 +352,7 @@ public:
   DefinedImportData *impECSym = nullptr;
   Symbol *thunkSym = nullptr;
   Symbol *auxThunkSym = nullptr;
-  Chunk *ECThunk = nullptr;
+  DefinedImportThunk *chkECSym = nullptr;
   std::string dllName;
 
 private:
