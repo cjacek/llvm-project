@@ -69,7 +69,7 @@ void SymbolTable::addFile(InputFile *file) {
       ctx.bitcodeFileInstances.push_back(f);
     } else if (auto *f = dyn_cast<ImportFile>(file)) {
       ctx.importFileInstances.push_back(f);
-      if (f->ECThunk)
+      if (f->chkECSym)
         ctx.driver.pullImportThunkSymbols();
     }
   }
@@ -836,6 +836,20 @@ Symbol *SymbolTable::addImportThunk(StringRef name, DefinedImportData *id,
   }
 
   reportDuplicate(s, id->file);
+  return nullptr;
+}
+
+DefinedImportThunk *SymbolTable::addImportCheckThunk(StringRef name,
+                                                     ImportFile *file) {
+  auto [s, wasInserted] = insert(name, nullptr);
+  s->isUsedInRegularObj = true;
+  if (wasInserted || isa<Undefined>(s) || s->isLazy()) {
+    replaceSymbol<DefinedImportThunk>(s, ctx, name, file->impSym,
+                                      make<ImportThunkChunkARM64EC>(file));
+    return cast<DefinedImportThunk>(s);
+  }
+
+  reportDuplicate(s, file);
   return nullptr;
 }
 
