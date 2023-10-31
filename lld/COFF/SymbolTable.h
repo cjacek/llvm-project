@@ -108,6 +108,7 @@ public:
   DefinedImportData *addImportData(StringRef n, ImportFile *f, bool isEC);
   Symbol *addImportThunk(StringRef name, DefinedImportData *s,
                          uint16_t machine);
+  DefinedImportThunk *addImportCheckThunk(StringRef name, ImportFile *file);
   void addLibcall(StringRef name);
   void addECThunk(Symbol *from, Symbol *to, uint32_t type);
   Symbol *findECThunk(Symbol *from, uint32_t type);

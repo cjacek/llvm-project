@@ -1106,13 +1106,14 @@ void ImportFile::parse() {
           saver().save(getArm64ECMangledFunctionName(name));
       auxThunkSym = ctx.symtab.addImportThunk(auxThunkName, impECSym, ARM64EC);
 
-      ECThunk = make<ImportThunkChunkARM64EC>(this);
+      StringRef impChkName = saver().save("__impchk_" + name);
+      chkECSym = ctx.symtab.addImportCheckThunk(impChkName, this);
     }
   }
 }
 
 Symbol *ImportFile::findECExitThunkSymbol() const {
-  if (!ECThunk)
+  if (!chkECSym)
     return nullptr;
   if (Symbol *sym = ctx.symtab.findECThunk(impECSym, 4))
     return sym;
