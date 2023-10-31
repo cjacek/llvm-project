@@ -401,6 +401,8 @@ public:
 class DefinedImportThunk : public Defined {
 public:
   DefinedImportThunk(COFFLinkerContext &ctx, StringRef name,
+                     DefinedImportData *s, ImportThunkChunk *chunk);
+  DefinedImportThunk(COFFLinkerContext &ctx, StringRef name,
                      DefinedImportData *s, uint16_t machine);
 
   static bool classof(const Symbol *s) {
