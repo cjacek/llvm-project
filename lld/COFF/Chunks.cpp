@@ -425,7 +425,7 @@ void SectionChunk::applyRelocation(uint8_t *off,
   if (sym && getMachine() == AMD64 && file->ctx.config.machine == ARM64EC &&
       isa<DefinedImportData>(sym)) {
     ImportFile *importFile = cast<DefinedImportData>(sym)->file;
-    if (importFile->ECThunk)
+    if (importFile->chkECSym)
       sym = importFile->impSym;
   }
 
@@ -822,6 +822,9 @@ void ImportThunkChunkARM64::writeTo(uint8_t *buf) const {
   applyArm64Addr(buf, impSymbol->getRVA(), rva, 12);
   applyArm64Ldr(buf + 4, off);
 }
+
+ImportThunkChunkARM64EC::ImportThunkChunkARM64EC(ImportFile *file)
+    : ImportThunkChunk(file->ctx, file->impSym), file(file) {}
 
 void ImportThunkChunkARM64EC::writeTo(uint8_t *buf) const {
   memcpy(buf, importThunkARM64EC, sizeof(importThunkARM64EC));
