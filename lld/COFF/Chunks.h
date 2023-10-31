@@ -613,9 +613,9 @@ private:
   MachineTypes machine;
 };
 
-class ImportThunkChunkARM64EC : public NonSectionCodeChunk {
+class ImportThunkChunkARM64EC : public ImportThunkChunk {
 public:
-  explicit ImportThunkChunkARM64EC(ImportFile *file) : file(file) {}
+  explicit ImportThunkChunkARM64EC(ImportFile *file);
   size_t getSize() const override { return sizeof(importThunkARM64EC); };
   MachineTypes getMachine() const override { return ARM64EC; }
   void writeTo(uint8_t *buf) const override;
