@@ -148,6 +148,7 @@ arm64ec_data_sym:
     .rva __imp_aux_otherfunc
     .rva __imp_myfunc2
     .rva __impchk_myfunc
+    .rva __auximpcopy_myfunc
 
 #--- arm64ec-stubs.s
     .text
