@@ -106,7 +106,8 @@ public:
   Symbol *addCommon(InputFile *f, StringRef n, uint64_t size,
                     const llvm::object::coff_symbol_generic *s = nullptr,
                     CommonChunk *c = nullptr);
-  DefinedImportData *addImportData(StringRef n, ImportFile *f, bool isEC);
+  DefinedImportData *addImportData(StringRef n, ImportFile *f,
+                                   Chunk *&location);
   Symbol *addImportThunk(StringRef name, DefinedImportData *s,
                          uint16_t machine);
   DefinedImportThunk *addImportCheckThunk(StringRef name, ImportFile *file);
