@@ -164,36 +164,6 @@ private:
   ImportFile *file;
 };
 
-class AuxIATCopyChunk : public NonSectionChunk {
-public:
-  explicit AuxIATCopyChunk(std::vector<Chunk *> &auxIat) : auxIat(auxIat) {
-    setAlignment(sizeof(uint64_t));
-  }
-
-  size_t getSize() const override { return auxIat.size() * sizeof(uint64_t); }
-
-  void writeTo(uint8_t *buf) const override {
-    for (Chunk *chunk : auxIat) {
-      chunk->writeTo(buf);
-      buf += chunk->getSize();
-    }
-  }
-
-  void getBaserels(std::vector<Baserel> *res) override {
-    uint32_t off = 0;
-    for (Chunk *chunk : auxIat) {
-      std::vector<Baserel> rels;
-      chunk->getBaserels(&rels);
-      for (Baserel &rel : rels)
-        res->emplace_back(rel.rva - chunk->getRVA() + rva + off, ARM64EC);
-      off += chunk->getSize();
-    }
-  }
-
-private:
-  std::vector<Chunk *> &auxIat;
-};
-
 static std::vector<std::vector<DefinedImportData *>>
 binImports(COFFLinkerContext &ctx,
            const std::vector<DefinedImportData *> &imports) {
@@ -776,12 +746,14 @@ void IdataContents::create(COFFLinkerContext &ctx) {
         auto chunk = make<ECImportChunk>(s->file);
         auxIat.push_back(chunk);
         s->setLocation(chunk);
+
+        chunk = make<ECImportChunk>(s->file);
+        auxIatCopy.push_back(chunk);
+        s->file->auxImpCopySym->setLocation(chunk);
       }
       auxIat.push_back(make<NullChunk>(ctx.config.wordsize));
+      auxIatCopy.push_back(make<NullChunk>(ctx.config.wordsize));
     }
-
-    if (!auxIat.empty())
-      auxIatCopyChunk = make<AuxIATCopyChunk>(auxIat);
   }
 }
 
@@ -885,9 +857,6 @@ void DelayLoadContents::create(Defined *h) {
       }
       auxIat.push_back(make<NullChunk>(ctx.config.wordsize));
     }
-
-    if (!auxIat.empty())
-      auxIatCopyChunk = make<AuxIATCopyChunk>(auxIat);
   }
 }
 
