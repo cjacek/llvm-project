@@ -814,11 +814,11 @@ Symbol *SymbolTable::addCommon(InputFile *f, StringRef n, uint64_t size,
 }
 
 DefinedImportData *SymbolTable::addImportData(StringRef n, ImportFile *f,
-                                              bool isEC) {
+                                              Chunk *&location) {
   auto [s, wasInserted] = insert(n, nullptr);
   s->isUsedInRegularObj = true;
   if (wasInserted || isa<Undefined>(s) || s->isLazy()) {
-    replaceSymbol<DefinedImportData>(s, n, f, isEC);
+    replaceSymbol<DefinedImportData>(s, n, f, location);
     return cast<DefinedImportData>(s);
   }
 
