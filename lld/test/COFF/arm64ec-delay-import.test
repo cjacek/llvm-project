@@ -42,7 +42,7 @@ DISASM-NEXT: 180002021: 66 0f 7f 4c 24 10            movdqa  %xmm1, 0x10(%rsp)
 DISASM-NEXT: 180002027: 66 0f 7f 54 24 20            movdqa  %xmm2, 0x20(%rsp)
 DISASM-NEXT: 18000202d: 66 0f 7f 5c 24 30            movdqa  %xmm3, 0x30(%rsp)
 DISASM-NEXT: 180002033: 48 8b d0                     movq    %rax, %rdx
-DISASM-NEXT: 180002036: 48 8d 0d 7b 11 00 00         leaq    0x117b(%rip), %rcx      # 0x1800031b8
+DISASM-NEXT: 180002036: 48 8d 0d 8b 11 00 00         leaq 0x118b(%rip), %rcx # 0x1800031c8
 DISASM-NEXT: 18000203d: e8 c6 ef ff ff               callq   0x180001008 <.text+0x8>
 DISASM-NEXT: 180002042: 66 0f 6f 04 24               movdqa  (%rsp), %xmm0
 DISASM-NEXT: 180002047: 66 0f 6f 4c 24 10            movdqa  0x10(%rsp), %xmm1
@@ -61,7 +61,7 @@ IMPORTS-NEXT:   Name: test.dll
 IMPORTS-NEXT:   Attributes: 0x1
 IMPORTS-NEXT:   ModuleHandle: 0x4058
 IMPORTS-NEXT:   ImportAddressTable: 0x4060
-IMPORTS-NEXT:   ImportNameTable: 0x31F8
+IMPORTS-NEXT:   ImportNameTable: 0x3208
 IMPORTS-NEXT:   BoundDelayImportTable: 0x0
 IMPORTS-NEXT:   UnloadDelayImportTable: 0x0
 IMPORTS-NEXT:   Import {
