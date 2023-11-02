@@ -37,7 +37,7 @@ public:
   std::vector<Chunk *> hints;
   std::vector<Chunk *> dllNames;
   std::vector<Chunk *> auxIat;
-  Chunk *auxIatCopyChunk = nullptr;
+  std::vector<Chunk *> auxIatCopy;
 };
 
 // Windows-specific.
@@ -81,7 +81,6 @@ private:
   std::vector<Chunk *> unwindinfo;
   std::vector<Chunk *> dllNames;
   std::vector<Chunk *> auxIat;
-  Chunk *auxIatCopyChunk = nullptr;
 
   COFFLinkerContext &ctx;
 };

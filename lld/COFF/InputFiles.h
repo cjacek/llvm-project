@@ -347,6 +347,7 @@ public:
 
   DefinedImportData *impSym = nullptr;
   DefinedImportData *impECSym = nullptr;
+  DefinedImportData *auxImpCopySym = nullptr;
   Symbol *thunkSym = nullptr;
   Symbol *auxThunkSym = nullptr;
   DefinedImportThunk *chkECSym = nullptr;
@@ -360,6 +361,7 @@ public:
   const coff_import_header *hdr;
   Chunk *location = nullptr;
   Chunk *ECLocation = nullptr;
+  Chunk *auxChkLocation = nullptr;
 
   // We want to eliminate dllimported symbols if no one actually refers to them.
   // These "Live" bits are used to keep track of which import library members
