@@ -714,16 +714,30 @@ void IdataContents::create(COFFLinkerContext &ctx) {
       if (s->getExternalName().empty()) {
         lookups.push_back(make<OrdinalOnlyChunk>(ctx, ord));
         addresses.push_back(make<OrdinalOnlyChunk>(ctx, ord));
-        continue;
+      } else {
+        auto *c = make<HintNameChunk>(s->getExternalName(), ord);
+        lookups.push_back(make<LookupChunk>(ctx, c));
+        addresses.push_back(make<LookupChunk>(ctx, c));
+        hints.push_back(c);
       }
-      auto *c = make<HintNameChunk>(s->getExternalName(), ord);
-      lookups.push_back(make<LookupChunk>(ctx, c));
-      addresses.push_back(make<LookupChunk>(ctx, c));
-      hints.push_back(c);
+
+      if (s->file->impECSym) {
+        auto chunk = make<ECImportChunk>(s->file);
+        auxIat.push_back(chunk);
+        s->file->impECSym->setLocation(chunk);
+
+        chunk = make<ECImportChunk>(s->file);
+        auxIatCopy.push_back(chunk);
+        s->file->auxImpCopySym->setLocation(chunk);
+      }
     }
     // Terminate with null values.
     lookups.push_back(make<NullChunk>(ctx.config.wordsize));
     addresses.push_back(make<NullChunk>(ctx.config.wordsize));
+    if (ctx.config.machine == ARM64EC) {
+      auxIat.push_back(make<NullChunk>(ctx.config.wordsize));
+      auxIatCopy.push_back(make<NullChunk>(ctx.config.wordsize));
+    }
 
     for (int i = 0, e = syms.size(); i < e; ++i)
       syms[i]->setLocation(addresses[base + i]);
@@ -737,24 +751,6 @@ void IdataContents::create(COFFLinkerContext &ctx) {
   }
   // Add null terminator.
   dirs.push_back(make<NullChunk>(sizeof(ImportDirectoryTableEntry)));
-
-  if (ctx.config.machine == ARM64EC) {
-    std::vector<std::vector<DefinedImportData *>> av =
-        binImports(ctx, ECImports);
-    for (std::vector<DefinedImportData *> &syms : av) {
-      for (DefinedImportData *s : syms) {
-        auto chunk = make<ECImportChunk>(s->file);
-        auxIat.push_back(chunk);
-        s->setLocation(chunk);
-
-        chunk = make<ECImportChunk>(s->file);
-        auxIatCopy.push_back(chunk);
-        s->file->auxImpCopySym->setLocation(chunk);
-      }
-      auxIat.push_back(make<NullChunk>(ctx.config.wordsize));
-      auxIatCopy.push_back(make<NullChunk>(ctx.config.wordsize));
-    }
-  }
 }
 
 std::vector<Chunk *> DelayLoadContents::getChunks() {
@@ -817,6 +813,12 @@ void DelayLoadContents::create(Defined *h) {
         s->loadThunkSym =
             cast<DefinedSynthetic>(ctx.symtab.addSynthetic(symName, t));
       }
+
+      if (s->file->impECSym) {
+        auto chunk = make<ECImportChunk>(s->file);
+        auxIat.push_back(chunk);
+        s->file->impECSym->setLocation(chunk);
+      }
     }
     thunks.push_back(tm);
     if (pdataChunk)
@@ -827,6 +829,8 @@ void DelayLoadContents::create(Defined *h) {
     // Terminate with null values.
     addresses.push_back(make<NullChunk>(8));
     names.push_back(make<NullChunk>(8));
+    if (ctx.config.machine == ARM64EC)
+      auxIat.push_back(make<NullChunk>(8));
 
     for (int i = 0, e = syms.size(); i < e; ++i)
       syms[i]->setLocation(addresses[base + i]);
@@ -845,19 +849,6 @@ void DelayLoadContents::create(Defined *h) {
     unwindinfo.push_back(unwind);
   // Add null terminator.
   dirs.push_back(make<NullChunk>(sizeof(delay_import_directory_table_entry)));
-
-  if (ctx.config.machine == ARM64EC) {
-    std::vector<std::vector<DefinedImportData *>> av =
-        binImports(ctx, ECImports);
-    for (std::vector<DefinedImportData *> &syms : av) {
-      for (DefinedImportData *s : syms) {
-        auto chunk = make<ECImportChunk>(s->file);
-        auxIat.push_back(chunk);
-        s->setLocation(chunk);
-      }
-      auxIat.push_back(make<NullChunk>(ctx.config.wordsize));
-    }
-  }
 }
 
 Chunk *DelayLoadContents::newTailMergeChunk(Chunk *dir) {
