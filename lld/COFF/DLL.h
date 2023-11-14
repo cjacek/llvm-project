@@ -49,7 +49,6 @@ public:
   void create(Defined *helper);
   std::vector<Chunk *> getChunks();
   std::vector<Chunk *> getDataChunks();
-  std::vector<Chunk *> getRdataChunks();
   ArrayRef<Chunk *> getCodeChunks() { return thunks; }
   ArrayRef<Chunk *> getCodePData() { return pdata; }
   ArrayRef<Chunk *> getCodeUnwindInfo() { return unwindinfo; }

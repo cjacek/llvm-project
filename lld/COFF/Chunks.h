@@ -890,6 +890,7 @@ void applyBranch24T(uint8_t *off, int32_t v);
 void applyArm64Addr(uint8_t *off, uint64_t s, uint64_t p, int shift);
 void applyArm64Imm(uint8_t *off, uint64_t imm, uint32_t rangeLimit);
 void applyArm64Branch26(uint8_t *off, int64_t v);
+void applyArm64Ldr(uint8_t *off, uint64_t imm);
 
 // Convenience class for initializing a coff_section with specific flags.
 class FakeSection {

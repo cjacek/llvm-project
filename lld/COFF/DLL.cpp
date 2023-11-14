@@ -145,25 +145,23 @@ private:
 // A chunk for ARM64EC auxiliary IAT.
 class AuxImportChunk : public NonSectionChunk {
 public:
-  explicit AuxImportChunk(ImportFile *file) : file(file) {
+  explicit AuxImportChunk(COFFLinkerContext &ctx, Chunk *c) : ctx(ctx), thunkChunk(c) {
     setAlignment(sizeof(uint64_t));
   }
   size_t getSize() const override { return sizeof(uint64_t); }
 
   void writeTo(uint8_t *buf) const override {
-    uint64_t impchkVA = 0;
-    if (file->impchkThunk)
-      impchkVA = file->impchkThunk->getRVA() + file->ctx.config.imageBase;
-    write64le(buf, impchkVA);
+    write64le(buf, thunkChunk ? thunkChunk->getRVA() + ctx.config.imageBase : 0);
   }
 
   void getBaserels(std::vector<Baserel> *res) override {
-    if (file->impchkThunk)
-      res->emplace_back(rva, file->ctx.config.machine);
+    if (thunkChunk)
+      res->emplace_back(rva, ARM64EC);
   }
 
 private:
-  ImportFile *file;
+  COFFLinkerContext &ctx;
+  Chunk *thunkChunk;
 };
 
 static std::vector<std::vector<DefinedImportData *>>
@@ -342,6 +340,46 @@ static const uint8_t tailMergeARM64[] = {
     0xe0, 0x07, 0x41, 0xa9, // ldp     x0, x1, [sp, #16]
     0xfd, 0x7b, 0xcd, 0xa8, // ldp     x29, x30, [sp], #208
     0x00, 0x02, 0x1f, 0xd6, // br      x16
+};
+
+static const uint8_t thunkARM64EC[] = {
+    0x11, 0x00, 0x00, 0x90, // adrp    x17, #0      __imp_aux_<FUNCNAME>
+    0x31, 0x02, 0x00, 0x91, // add     x17, x17, #0 :lo12:__imp_aux_<FUNCNAME>
+    0xfe, 0x0f, 0x1f, 0xf8, // str     x30, [sp, #-0x10]!
+    0x00, 0x00, 0x00, 0x94, // bl      __tailMerge_<lib>
+    0xfe, 0x07, 0x41, 0xf8, // ldr     x30, [sp], #0x10
+    0x08, 0x00, 0x00, 0x90, // adrp    x0, __impchk_<FUNCNAME>
+    0x08, 0x01, 0x00, 0x91, // add     x0, x0, :lo12:__impchk_<FUNCNAME>
+    0x09, 0x00, 0x00, 0x90, // adrp    x0, __imp_<FUNCNAME>
+    0x28, 0x01, 0x00, 0xf9, // str     x8, [x9, :lo12:__imp_<FUNCNAME>]
+    0x00, 0x01, 0x1f, 0xd6, // br      x8
+};
+
+static const uint8_t delayHelperARM64EC[] = {
+    0xfd, 0x7b, 0xb3, 0xa9, // stp     x29, x30, [sp, #-208]!
+    0xfd, 0x03, 0x00, 0x91, // mov     x29, sp
+    0xe0, 0x07, 0x01, 0xa9, // stp     x0, x1, [sp, #16]
+    0xe2, 0x0f, 0x02, 0xa9, // stp     x2, x3, [sp, #32]
+    0xe4, 0x17, 0x03, 0xa9, // stp     x4, x5, [sp, #48]
+    0xe6, 0x1f, 0x04, 0xa9, // stp     x6, x7, [sp, #64]
+    0xe0, 0x87, 0x02, 0xad, // stp     q0, q1, [sp, #80]
+    0xe2, 0x8f, 0x03, 0xad, // stp     q2, q3, [sp, #112]
+    0xe4, 0x97, 0x04, 0xad, // stp     q4, q5, [sp, #144]
+    0xe6, 0x9f, 0x05, 0xad, // stp     q6, q7, [sp, #176]
+    0xe1, 0x03, 0x11, 0xaa, // mov     x1, x17
+    0x00, 0x00, 0x00, 0x90, // adrp    x0, #0     DELAY_IMPORT_DESCRIPTOR
+    0x00, 0x00, 0x00, 0x91, // add     x0, x0, #0 :lo12:DELAY_IMPORT_DESCRIPTOR
+    0x00, 0x00, 0x00, 0x94, // bl      #0 __delayLoadHelper2
+    0xe6, 0x9f, 0x45, 0xad, // ldp     q6, q7, [sp, #176]
+    0xe4, 0x97, 0x44, 0xad, // ldp     q4, q5, [sp, #144]
+    0xe2, 0x8f, 0x43, 0xad, // ldp     q2, q3, [sp, #112]
+    0xe0, 0x87, 0x42, 0xad, // ldp     q0, q1, [sp, #80]
+    0xe6, 0x1f, 0x44, 0xa9, // ldp     x6, x7, [sp, #64]
+    0xe4, 0x17, 0x43, 0xa9, // ldp     x4, x5, [sp, #48]
+    0xe2, 0x0f, 0x42, 0xa9, // ldp     x2, x3, [sp, #32]
+    0xe0, 0x07, 0x41, 0xa9, // ldp     x0, x1, [sp, #16]
+    0xfd, 0x7b, 0xcd, 0xa8, // ldp     x29, x30, [sp], #208
+    0xc0, 0x03, 0x5f, 0xd6, // ret
 };
 
 // A chunk for the delay import thunk.
@@ -558,6 +596,50 @@ public:
   Defined *helper = nullptr;
 };
 
+class ThunkChunkARM64EC : public NonSectionCodeChunk {
+public:
+  ThunkChunkARM64EC(ImportFile *f, Chunk *tm) : file(f), tailMerge(tm) {
+    setAlignment(4);
+  }
+
+  size_t getSize() const override { return sizeof(thunkARM64EC); }
+  MachineTypes getMachine() const override { return ARM64EC; }
+
+  void writeTo(uint8_t *buf) const override {
+    memcpy(buf, thunkARM64EC, sizeof(thunkARM64EC));
+    applyArm64Addr(buf + 0, file->impSym->getRVA(), rva + 0, 12);
+    applyArm64Imm(buf + 4, file->impSym->getRVA() & 0xfff, 0);
+    applyArm64Branch26(buf + 12, tailMerge->getRVA() - rva - 12);
+    applyArm64Addr(buf + 20, file->impchkThunk->getRVA(), rva + 20, 12);
+    applyArm64Imm(buf + 24, file->impchkThunk->getRVA() & 0xfff, 0);
+    applyArm64Addr(buf + 28, file->impECSym->getRVA(), rva + 28, 12);
+    applyArm64Ldr(buf + 32, file->impECSym->getRVA() & 0xfff);
+  }
+
+  ImportFile *file;
+  Chunk *tailMerge;
+};
+
+class DelayHelperChunkARM64EC : public NonSectionCodeChunk {
+public:
+  DelayHelperChunkARM64EC(Chunk *d, Defined *h) : desc(d), helper(h) {
+    setAlignment(4);
+  }
+
+  size_t getSize() const override { return sizeof(delayHelperARM64EC); }
+  MachineTypes getMachine() const override { return ARM64EC; }
+
+  void writeTo(uint8_t *buf) const override {
+    memcpy(buf, delayHelperARM64EC, sizeof(delayHelperARM64EC));
+    applyArm64Addr(buf + 44, desc->getRVA(), rva + 44, 12);
+    applyArm64Imm(buf + 48, desc->getRVA() & 0xfff, 0);
+    applyArm64Branch26(buf + 52, helper->getRVA() - rva - 52);
+  }
+
+  Chunk *desc = nullptr;
+  Defined *helper = nullptr;
+};
+
 // A chunk for the import descriptor table.
 class DelayAddressChunk : public NonSectionChunk {
 public:
@@ -727,11 +809,12 @@ void IdataContents::create(COFFLinkerContext &ctx) {
       }
 
       if (s->file->impECSym) {
-        auto chunk = make<AuxImportChunk>(s->file);
+        Chunk *impchkChunk = s->file->impchkThunk;
+        auto chunk = make<AuxImportChunk>(ctx, impchkChunk);
         auxIat.push_back(chunk);
         s->file->impECSym->setLocation(chunk);
 
-        chunk = make<AuxImportChunk>(s->file);
+        chunk = make<AuxImportChunk>(ctx, impchkChunk);
         auxIatCopy.push_back(chunk);
         s->file->auxImpCopySym->setLocation(chunk);
       }
@@ -771,11 +854,6 @@ std::vector<Chunk *> DelayLoadContents::getDataChunks() {
   std::vector<Chunk *> v;
   v.insert(v.end(), moduleHandles.begin(), moduleHandles.end());
   v.insert(v.end(), addresses.begin(), addresses.end());
-  return v;
-}
-
-std::vector<Chunk *> DelayLoadContents::getRdataChunks() {
-  std::vector<Chunk *> v;
   v.insert(v.end(), auxIat.begin(), auxIat.end());
   return v;
 }
@@ -799,6 +877,10 @@ void DelayLoadContents::create(Defined *h) {
     size_t base = addresses.size();
     Chunk *tm = newTailMergeChunk(dir);
     Chunk *pdataChunk = unwind ? newTailMergePDataChunk(tm, unwind) : nullptr;
+    Chunk *tmEC = nullptr;
+    if (ctx.config.machine == ARM64EC)
+      tmEC = make<DelayHelperChunkARM64EC>(dir, helper);
+
     for (DefinedImportData *s : syms) {
       Chunk *t = newThunkChunk(s, tm);
       auto *a = make<DelayAddressChunk>(ctx, t);
@@ -820,12 +902,16 @@ void DelayLoadContents::create(Defined *h) {
       }
 
       if (s->file->impECSym) {
-        auto chunk = make<AuxImportChunk>(s->file);
+        auto thunkEC = make<ThunkChunkARM64EC>(s->file, tmEC);
+        thunks.push_back(thunkEC);
+        auto chunk = make<AuxImportChunk>(ctx, thunkEC);
         auxIat.push_back(chunk);
         s->file->impECSym->setLocation(chunk);
       }
     }
     thunks.push_back(tm);
+    if (tmEC)
+      thunks.push_back(tmEC);
     if (pdataChunk)
       pdata.push_back(pdataChunk);
     StringRef tmName =
