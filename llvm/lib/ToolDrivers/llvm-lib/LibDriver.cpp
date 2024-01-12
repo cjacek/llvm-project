@@ -384,7 +384,7 @@ int llvm::libDriverMain(ArrayRef<const char *> ArgsArr) {
     }
 
     Expected<COFFModuleDefinition> Def =
-        parseCOFFModuleDefinition(*MB, LibMachine, /*MingwDef=*/false);
+        parseCOFFModuleDefinition(*MB, LibMachine);
 
     if (!Def) {
       llvm::errs() << "error parsing definition\n"
@@ -392,8 +392,34 @@ int llvm::libDriverMain(ArrayRef<const char *> ArgsArr) {
       return 1;
     }
 
-    return writeImportLibrary(Def->OutputFile, OutputPath, Def->Exports,
-                              LibMachine,
+    std::vector<COFFShortExport> NativeExports;
+    std::string OutputFile = Def->OutputFile;
+
+    if (isArm64EC(LibMachine) && Args.hasArg(OPT_nativedeffile)) {
+      std::unique_ptr<MemoryBuffer> NMB =
+          openFile(Args.getLastArg(OPT_nativedeffile)->getValue());
+      if (!NMB)
+        return 1;
+
+      if (!NMB->getBufferSize()) {
+        llvm::errs() << "native definition file empty\n";
+        return 1;
+      }
+
+      Expected<COFFModuleDefinition> NativeDef =
+          parseCOFFModuleDefinition(*NMB, COFF::IMAGE_FILE_MACHINE_ARM64);
+
+      if (!NativeDef) {
+        llvm::errs() << "error parsing native definition\n"
+                     << errorToErrorCode(NativeDef.takeError()).message();
+        return 1;
+      }
+      NativeExports = std::move(NativeDef->Exports);
+      OutputFile = std::move(NativeDef->OutputFile);
+    }
+
+    return writeImportLibrary(OutputFile, OutputPath, Def->Exports,
+                              NativeExports, LibMachine,
                               /*MinGW=*/false)
                ? 1
                : 0;
