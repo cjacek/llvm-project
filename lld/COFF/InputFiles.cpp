@@ -971,6 +971,9 @@ void ImportFile::parse() {
     extName = ltrim1(name, "?@_");
     extName = extName.substr(0, extName.find('@'));
     break;
+  case IMPORT_NAME_EXPORTAS:
+    extName = StringRef(nameStart + dllName.size() + 1);
+    break;
   }
 
   this->hdr = hdr;

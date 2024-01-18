@@ -577,11 +577,10 @@ Export LinkerDriver::parseExport(StringRef arg) {
     if (y.contains(".")) {
       e.name = x;
       e.forwardTo = y;
-      return e;
+    } else {
+      e.extName = x;
+      e.name = y;
     }
-
-    e.extName = x;
-    e.name = y;
     if (e.name.empty())
       goto err;
   }
@@ -607,6 +606,13 @@ Export LinkerDriver::parseExport(StringRef arg) {
     if (tok.equals_insensitive("private")) {
       e.isPrivate = true;
       continue;
+    }
+    if (tok.equals_insensitive("exportas")) {
+      if (rest.empty() || rest.contains(','))
+        goto err;
+      e.extName = e.exportName = rest;
+      e.exportAs = true;
+      break;
     }
     if (tok.starts_with("@")) {
       int32_t ord;
@@ -684,6 +690,8 @@ void LinkerDriver::fixupExports() {
   }
 
   for (Export &e : ctx.config.exports) {
+    if (!e.exportName.empty())
+      continue;
     if (!e.forwardTo.empty()) {
       e.exportName = undecorate(ctx, e.name);
     } else {
@@ -694,8 +702,10 @@ void LinkerDriver::fixupExports() {
   if (ctx.config.killAt && ctx.config.machine == I386) {
     for (Export &e : ctx.config.exports) {
       e.name = killAt(e.name, true);
-      e.exportName = killAt(e.exportName, false);
-      e.extName = killAt(e.extName, true);
+      if (!e.exportAs) {
+        e.exportName = killAt(e.exportName, false);
+        e.extName = killAt(e.extName, true);
+      }
       e.symbolName = killAt(e.symbolName, true);
     }
   }

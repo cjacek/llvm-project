@@ -61,6 +61,7 @@ struct Export {
   bool data = false;
   bool isPrivate = false;
   bool constant = false;
+  bool exportAs = false;
 
   // If an export is a form of /export:foo=dllname.bar, that means
   // that foo should be exported as an alias to bar in the DLL.

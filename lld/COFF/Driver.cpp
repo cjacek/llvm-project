@@ -944,7 +944,10 @@ void LinkerDriver::createImportLibrary(bool asLib) {
     COFFShortExport e2;
     e2.Name = std::string(e1.name);
     e2.SymbolName = std::string(e1.symbolName);
-    e2.ExtName = std::string(e1.extName);
+    if (e1.exportAs)
+      e2.ExportAs = std::string(e1.exportName);
+    else
+      e2.ExtName = std::string(e1.extName);
     e2.AliasTarget = std::string(e1.aliasTarget);
     e2.Ordinal = e1.ordinal;
     e2.Noname = e1.noname;
@@ -1040,11 +1043,20 @@ void LinkerDriver::parseModuleDefs(StringRef path) {
         StringRef(e1.Name).contains('.')) {
       e2.name = saver().save(e1.ExtName);
       e2.forwardTo = saver().save(e1.Name);
+      if (!e1.ExportAs.empty()) {
+        e2.extName = e2.exportName = saver().save(e1.ExportAs);
+        e2.exportAs = true;
+      }
       ctx.config.exports.push_back(e2);
       continue;
     }
     e2.name = saver().save(e1.Name);
-    e2.extName = saver().save(e1.ExtName);
+    if (e1.ExportAs.empty()) {
+      e2.extName = saver().save(e1.ExtName);
+    } else {
+      e2.extName = e2.exportName = saver().save(e1.ExportAs);
+      e2.exportAs = true;
+    }
     e2.aliasTarget = saver().save(e1.AliasTarget);
     e2.ordinal = e1.Ordinal;
     e2.noname = e1.Noname;
