@@ -354,8 +354,8 @@ createDumper(const ObjectFile &Obj, ScopedPrinter &Writer) {
 }
 
 /// Dumps the specified object file.
-static void dumpObject(ObjectFile &Obj, ScopedPrinter &Writer,
-                       const Archive *A = nullptr) {
+void ObjDumper::dumpObject(ObjectFile &Obj, ScopedPrinter &Writer,
+                           const Archive *A, bool IsHybrid) {
   std::string FileStr =
       A ? Twine(A->getFileName() + "(" + Obj.getFileName() + ")").str()
         : Obj.getFileName().str();
@@ -532,6 +532,9 @@ static void dumpObject(ObjectFile &Obj, ScopedPrinter &Writer,
     Dumper->printStackMap();
   if (opts::PrintStackSizes)
     Dumper->printStackSizes();
+
+  if (!IsHybrid && Obj.isCOFF())
+    Dumper->printCOFFHybridObject();
 }
 
 /// Dumps each object file in \a Arc;
@@ -547,7 +550,7 @@ static void dumpArchive(const Archive *Arc, ScopedPrinter &Writer) {
 
     Binary *Bin = ChildOrErr->get();
     if (ObjectFile *Obj = dyn_cast<ObjectFile>(Bin))
-      dumpObject(*Obj, Writer, Arc);
+      ObjDumper::dumpObject(*Obj, Writer, Arc);
     else if (COFFImportFile *Imp = dyn_cast<COFFImportFile>(Bin))
       dumpCOFFImportFile(Imp, Writer);
     else
@@ -566,7 +569,7 @@ static void dumpMachOUniversalBinary(const MachOUniversalBinary *UBinary,
   for (const MachOUniversalBinary::ObjectForArch &Obj : UBinary->objects()) {
     Expected<std::unique_ptr<MachOObjectFile>> ObjOrErr = Obj.getAsObjectFile();
     if (ObjOrErr)
-      dumpObject(*ObjOrErr.get(), Writer);
+      ObjDumper::dumpObject(*ObjOrErr.get(), Writer);
     else if (auto E = isNotObjectErrorInvalidFileType(ObjOrErr.takeError()))
       reportError(ObjOrErr.takeError(), UBinary->getFileName());
     else if (Expected<std::unique_ptr<Archive>> AOrErr = Obj.getAsArchive())
@@ -612,7 +615,7 @@ static void dumpInput(StringRef File, ScopedPrinter &Writer) {
                dyn_cast<MachOUniversalBinary>(Bin.get()))
     dumpMachOUniversalBinary(UBinary, Writer);
   else if (ObjectFile *Obj = dyn_cast<ObjectFile>(Bin.get()))
-    dumpObject(*Obj, Writer);
+    ObjDumper::dumpObject(*Obj, Writer);
   else if (COFFImportFile *Import = dyn_cast<COFFImportFile>(Bin.get()))
     dumpCOFFImportFile(Import, Writer);
   else if (WindowsResource *WinRes = dyn_cast<WindowsResource>(Bin.get()))
