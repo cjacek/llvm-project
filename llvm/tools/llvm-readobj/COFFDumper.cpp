@@ -99,6 +99,7 @@ public:
   void printCOFFTLSDirectory() override;
   void printCOFFResources() override;
   void printCOFFLoadConfig() override;
+  void printCOFFHybridObject() override;
   void printCodeViewDebugInfo() override;
   void mergeCodeViewTypes(llvm::codeview::MergingTypeTableBuilder &CVIDs,
                           llvm::codeview::MergingTypeTableBuilder &CVTypes,
@@ -2270,4 +2271,19 @@ void COFFDumper::printCOFFTLSDirectory(
   W.printFlags("Characteristics", TlsTable->Characteristics,
                ArrayRef(ImageSectionCharacteristics),
                COFF::SectionCharacteristics(COFF::IMAGE_SCN_ALIGN_MASK));
+}
+
+void COFFDumper::printCOFFHybridObject() {
+  Expected<std::unique_ptr<MemoryBuffer>> HybridViewOrErr =
+      Obj->getHybridObjectView();
+  if (!HybridViewOrErr)
+    reportError(HybridViewOrErr.takeError(), Obj->getFileName().str());
+  if (*HybridViewOrErr) {
+    Expected<std::unique_ptr<COFFObjectFile>> HybridObjOrErr =
+        COFFObjectFile::create(**HybridViewOrErr);
+    if (!HybridObjOrErr)
+      reportError(HybridObjOrErr.takeError(), Obj->getFileName().str());
+    DictScope D(Writer, "HybridObject");
+    ObjDumper::dumpObject(**HybridObjOrErr, Writer, nullptr, true);
+  }
 }
