@@ -1489,6 +1489,53 @@ StringRef COFFObjectFile::mapDebugSectionName(StringRef Name) const {
       .Default(Name);
 }
 
+std::unique_ptr<MemoryBuffer> COFFObjectFile::getHybridObjectView() const {
+  if (getMachine() != COFF::IMAGE_FILE_MACHINE_ARM64X)
+    return nullptr;
+
+  std::unique_ptr<WritableMemoryBuffer> HybridView;
+
+  for (auto DynReloc : dynamic_relocs()) {
+    if (DynReloc.getType() != COFF::IMAGE_DYNAMIC_RELOCATION_ARM64X)
+      continue;
+
+    for (auto reloc : DynReloc.arm64x_relocs()) {
+      if (!HybridView) {
+        HybridView =
+            WritableMemoryBuffer::getNewUninitMemBuffer(Data.getBufferSize());
+        memcpy(HybridView->getBufferStart(), Data.getBufferStart(),
+               Data.getBufferSize());
+      }
+
+      uint32_t rva = reloc.getRVA();
+      void *Ptr;
+      uint64_t IntPtr;
+      if (rva & ~0xfff) {
+        cantFail(getRvaPtr(rva, IntPtr));
+        Ptr = HybridView->getBufferStart() + IntPtr -
+              reinterpret_cast<uintptr_t>(base());
+      } else {
+        Ptr = HybridView->getBufferStart() + rva;
+      }
+
+      switch (reloc.getType()) {
+      case COFF::IMAGE_DVRT_ARM64X_FIXUP_TYPE_ZEROFILL:
+        memset(Ptr, 0, reloc.getSize());
+        break;
+      case COFF::IMAGE_DVRT_ARM64X_FIXUP_TYPE_VALUE: {
+        auto Value = static_cast<ulittle64_t>(reloc.getValue());
+        memcpy(Ptr, &Value, reloc.getSize());
+        break;
+      }
+      case COFF::IMAGE_DVRT_ARM64X_FIXUP_TYPE_DELTA:
+        *reinterpret_cast<ulittle32_t *>(Ptr) += reloc.getValue();
+        break;
+      }
+    }
+  }
+  return HybridView;
+}
+
 bool ImportDirectoryEntryRef::
 operator==(const ImportDirectoryEntryRef &Other) const {
   return ImportTable == Other.ImportTable && Index == Other.Index;
