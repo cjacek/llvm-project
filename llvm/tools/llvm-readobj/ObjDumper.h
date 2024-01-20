@@ -149,6 +149,7 @@ public:
   virtual void printCOFFTLSDirectory() {}
   virtual void printCOFFResources() {}
   virtual void printCOFFLoadConfig() { }
+  virtual void printCOFFHybridObject() {}
   virtual void printCodeViewDebugInfo() { }
   virtual void
   mergeCodeViewTypes(llvm::codeview::MergingTypeTableBuilder &CVIDs,
@@ -184,6 +185,10 @@ public:
   std::function<Error(const Twine &Msg)> WarningHandler;
   void reportUniqueWarning(Error Err) const;
   void reportUniqueWarning(const Twine &Msg) const;
+
+  static void dumpObject(object::ObjectFile &Obj, ScopedPrinter &Writer,
+                         const object::Archive *A = nullptr,
+                         bool IsHybrid = false);
 
 protected:
   ScopedPrinter &W;
