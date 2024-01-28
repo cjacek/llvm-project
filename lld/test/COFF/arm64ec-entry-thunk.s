@@ -1,10 +1,16 @@
 // REQUIRES: aarch64
 
 // RUN: llvm-mc -filetype=obj -triple=arm64ec-windows %s -o %t.obj
-// RUN: llvm-mc -filetype=obj -triple=arm64ec-windows %S/Inputs/loadconfig-arm64ec.s -o %t-loadcfg.obj
-// RUN: lld-link -machine:arm64ec -dll -noentry -out:%t.dll %t.obj %t-loadcfg.obj \
+// RUN: llvm-mc -filetype=obj -triple=arm64ec-windows %S/Inputs/loadconfig-arm64ec.s -o %t-loadconfig-arm64ec.obj
+// RUN: llvm-mc -filetype=obj -triple=aarch64-windows %S/Inputs/loadconfig-arm64.s -o %t-loadconfig-arm64.obj
+
+// RUN: lld-link -machine:arm64ec -dll -noentry -out:%t.dll %t.obj %t-loadconfig-arm64ec.obj \
 // RUN:          -export:testfunc -export:testfunc2
 // RUN: llvm-objdump -d %t.dll | FileCheck -check-prefix=DISASM %s
+
+// RUN: lld-link -machine:arm64x -dll -noentry -out:%t.arm64x.dll %t.obj %t-loadconfig-arm64ec.obj \
+// RUN:          %t-loadconfig-arm64.obj -export:testfunc -export:testfunc2
+// RUN: llvm-objdump -d %t.arm64x.dll | FileCheck -check-prefix=DISASMX %s
 
 // DISASM:      Disassembly of section .text:
 // DISASM-EMPTY:
@@ -39,6 +45,39 @@
 // DISASM-NEXT: 180002019: e9 f2 ef ff ff               jmp     0x180001010 <.text+0x10>
 // DISASM-NEXT: 18000201e: cc                           int3
 // DISASM-NEXT: 18000201f: cc                           int3
+
+// DISASMX:      Disassembly of section .text:
+// DISASMX-EMPTY:
+// DISASMX-NEXT: 0000000180001000 <.text>:
+// DISASMX-NEXT: 180001000: 00000015     udf     #0x15
+// DISASMX-NEXT: 180001004: 52800020     mov     w0, #0x1                // =1
+// DISASMX-NEXT: 180001008: d65f03c0     ret
+// DISASMX-NEXT: 18000100c: 00000011     udf     #0x11
+// DISASMX-NEXT: 180001010: 52800040     mov     w0, #0x2                // =2
+// DISASMX-NEXT: 180001014: d65f03c0     ret
+// DISASMX-NEXT: 180001018: 52800140     mov     w0, #0xa                // =10
+// DISASMX-NEXT: 18000101c: d65f03c0     ret
+// DISASMX-NEXT: 180001020: 52800280     mov     w0, #0x14               // =20
+// DISASMX-NEXT: 180001024: d65f03c0     ret
+// DISASMX-EMPTY:
+// DISASMX-NEXT: Disassembly of section .hexpthk:
+// DISASMX-EMPTY:
+// DISASMX-NEXT: 0000000180002000 <.hexpthk>:
+// DISASMX-NEXT: 180002000: 48 8b c4                     movq    %rsp, %rax
+// DISASMX-NEXT: 180002003: 48 89 58 20                  movq    %rbx, 0x20(%rax)
+// DISASMX-NEXT: 180002007: 55                           pushq   %rbp
+// DISASMX-NEXT: 180002008: 5d                           popq    %rbp
+// DISASMX-NEXT: 180002009: e9 f6 ef ff ff               jmp     0x180001004 <.text+0x4>
+// DISASMX-NEXT: 18000200e: cc                           int3
+// DISASMX-NEXT: 18000200f: cc                           int3
+// DISASMX-NEXT: 180002010: 48 8b c4                     movq    %rsp, %rax
+// DISASMX-NEXT: 180002013: 48 89 58 20                  movq    %rbx, 0x20(%rax)
+// DISASMX-NEXT: 180002017: 55                           pushq   %rbp
+// DISASMX-NEXT: 180002018: 5d                           popq    %rbp
+// DISASMX-NEXT: 180002019: e9 f2 ef ff ff               jmp     0x180001010 <.text+0x10>
+// DISASMX-NEXT: 18000201e: cc                           int3
+// DISASMX-NEXT: 18000201f: cc                           int3
+
 
     .section .text,"xr",discard,testfunc
     .globl testfunc

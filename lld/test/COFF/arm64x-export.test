@@ -1,0 +1,120 @@
+REQUIRES: aarch64
+RUN: split-file %s %t.dir && cd %t.dir
+
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows arm64ec-func.s -o arm64ec-func.obj
+RUN: llvm-mc -filetype=obj -triple=aarch64-windows arm64-func.s -o arm64-func.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows arm64-drectve.s -o arm64ec-drectve.obj
+RUN: llvm-mc -filetype=obj -triple=aarch64-windows arm64-drectve.s -o arm64-drectve.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows %S/Inputs/loadconfig-arm64ec.s -o loadconfig-arm64ec.obj
+RUN: llvm-mc -filetype=obj -triple=aarch64-windows %S/Inputs/loadconfig-arm64.s -o loadconfig-arm64.obj
+
+Exporting with a command line argument exports only EC function.
+
+RUN: lld-link -machine:arm64x -dll -out:out.dll arm64ec-func.obj arm64-func.obj \
+RUN:          loadconfig-arm64.obj loadconfig-arm64ec.obj -noentry -export:func
+
+RUN: llvm-objdump -d out.dll | FileCheck -check-prefix=DISASMEC %s
+DISASMEC:      Disassembly of section .text:
+DISASMEC-EMPTY:
+DISASMEC-NEXT: 0000000180001000 <.text>:
+DISASMEC-NEXT: 180001000: 52800040     mov     w0, #0x2                // =2
+DISASMEC-NEXT: 180001004: d65f03c0     ret
+DISASMEC-EMPTY:
+DISASMEC-NEXT: Disassembly of section .hexpthk:
+DISASMEC-EMPTY:
+DISASMEC-NEXT: 0000000180002000 <.hexpthk>:
+DISASMEC-NEXT: 180002000: 48 8b c4                     movq    %rsp, %rax
+DISASMEC-NEXT: 180002003: 48 89 58 20                  movq    %rbx, 0x20(%rax)
+DISASMEC-NEXT: 180002007: 55                           pushq   %rbp
+DISASMEC-NEXT: 180002008: 5d                           popq    %rbp
+DISASMEC-NEXT: 180002009: e9 f2 ef ff ff               jmp     0x180001000 <.text>
+DISASMEC-NEXT: 18000200e: cc                           int3
+DISASMEC-NEXT: 18000200f: cc                           int3
+
+RUN: llvm-readobj --coff-exports out.dll | FileCheck -check-prefix=EXPORTSEC %s
+EXPORTSEC-NOT:  Name: func
+EXPORTSEC:      HybridObject {
+EXPORTSEC:        Export {
+EXPORTSEC-NEXT:     Ordinal: 1
+EXPORTSEC-NEXT:     Name: func
+EXPORTSEC-NEXT:     RVA: 0x2000
+EXPORTSEC-NEXT:   }
+EXPORTSEC-NEXT: }
+
+
+RUN: lld-link -machine:arm64x -dll -out:out2.dll arm64ec-func.obj arm64-func.obj \
+RUN:          loadconfig-arm64.obj loadconfig-arm64ec.obj arm64ec-drectve.obj -noentry
+RUN: llvm-objdump -d out2.dll | FileCheck -check-prefix=DISASMEC %s
+RUN: llvm-readobj --coff-exports out2.dll | FileCheck -check-prefix=EXPORTSEC %s
+
+
+RUN: lld-link -machine:arm64x -dll -out:out3.dll arm64ec-func.obj arm64-func.obj \
+RUN:          loadconfig-arm64.obj loadconfig-arm64ec.obj arm64-drectve.obj -noentry
+
+RUN: llvm-objdump -d out3.dll | FileCheck -check-prefix=DISASMNATIVE %s
+DISASMNATIVE:      Disassembly of section .text:
+DISASMNATIVE-EMPTY:
+DISASMNATIVE-NEXT: 0000000180001000 <func>:
+DISASMNATIVE-NEXT: 180001000: 52800020     mov     w0, #0x1                // =1
+DISASMNATIVE-NEXT: 180001004: d65f03c0     ret
+
+RUN: llvm-readobj --coff-exports out3.dll | FileCheck -check-prefix=EXPORTSNATIVE %s
+EXPORTSNATIVE:      Export {
+EXPORTSNATIVE-NEXT:   Ordinal: 1
+EXPORTSNATIVE-NEXT:   Name: func
+EXPORTSNATIVE-NEXT:   RVA: 0x1000
+EXPORTSNATIVE-NEXT: }
+EXPORTSNATIVE:      HybridObject {
+EXPORTSNATIVE-NOT:  Name: func
+
+
+RUN: lld-link -machine:arm64x -dll -out:out2.dll arm64ec-func.obj arm64-func.obj \
+RUN:          loadconfig-arm64.obj loadconfig-arm64ec.obj arm64ec-drectve.obj -noentry
+RUN: llvm-objdump -d out2.dll | FileCheck -check-prefix=DISASMEC %s
+RUN: llvm-readobj --coff-exports out2.dll | FileCheck -check-prefix=EXPORTSEC %s
+
+
+RUN: lld-link -machine:arm64x -dll -out:out4.dll arm64ec-func.obj arm64-func.obj \
+RUN:          loadconfig-arm64.obj loadconfig-arm64ec.obj arm64-drectve.obj arm64ec-drectve.obj -noentry
+
+RUN: llvm-objdump -d out4.dll | FileCheck -check-prefix=DISASMX %s
+DISASMX:      Disassembly of section .text:
+DISASMX-EMPTY:
+DISASMX-NEXT: 0000000180001000 <func>:
+DISASMX-NEXT: 180001000: 52800020     mov     w0, #0x1                // =1
+DISASMX-NEXT: 180001004: d65f03c0     ret
+
+RUN: llvm-readobj --coff-exports out4.dll | FileCheck -check-prefix=EXPORTSX %s
+EXPORTSX:      Export {
+EXPORTSX-NEXT:   Ordinal: 1
+EXPORTSX-NEXT:   Name: func
+EXPORTSX-NEXT:   RVA: 0x1000
+EXPORTSX-NEXT: }
+EXPORTSX:      HybridObject {
+EXPORTSX:        Export {
+EXPORTSX-NEXT:     Ordinal: 1
+EXPORTSX-NEXT:     Name: func
+EXPORTSX-NEXT:     RVA: 0x3000
+EXPORTSX-NEXT:   }
+EXPORTSX-NEXT: }
+
+
+#--- arm64-func.s
+    .section .text,"xr",discard,func
+    .globl func
+    .p2align 2
+func:
+    mov w0, #1
+    ret
+
+#--- arm64ec-func.s
+    .section .text,"xr",discard,func
+    .globl func
+    .p2align 2
+func:
+    mov w0, #2
+    ret
+
+#--- arm64-drectve.s
+.section .drectve
+    .ascii "-export:func"

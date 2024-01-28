@@ -31,7 +31,7 @@ void markLive(COFFLinkerContext &ctx) {
   // COMDAT section chunks are dead by default. Add non-COMDAT chunks. Do not
   // traverse DWARF sections. They are live, but they should not keep other
   // sections alive.
-  for (Chunk *c : ctx.symtab.getChunks())
+  for (Chunk *c : ctx.getChunks())
     if (auto *sc = dyn_cast<SectionChunk>(c))
       if (sc->live && !sc->isDWARF())
         worklist.push_back(sc);
@@ -54,8 +54,11 @@ void markLive(COFFLinkerContext &ctx) {
   addSym = [&](Symbol *b) {
     if (auto *sym = dyn_cast<DefinedRegular>(b)) {
       enqueue(sym->getChunk());
-      if (Symbol *entryThunk = ctx.symtab.findECThunk(b, 1))
-        addSym(entryThunk);
+      if (sym->getChunk()->getMachine() == ARM64EC) {
+        if (Symbol *entryThunk =
+                ctx.getTarget(ARM64EC).symtab.findECThunk(b, 1))
+          addSym(entryThunk);
+      }
     } else if (auto *sym = dyn_cast<DefinedImportData>(b)) {
       addImportFile(sym->file);
     } else if (auto *sym = dyn_cast<DefinedImportThunk>(b)) {
