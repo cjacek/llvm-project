@@ -153,6 +153,10 @@ bool ICF::equalsConstant(const SectionChunk *a, const SectionChunk *b) {
   if (a->relocsSize != b->relocsSize)
     return false;
 
+  if (a->getMachine() != b->getMachine())
+    return false;
+  // FIXME: should we check ARM64EC entry thunks?
+
   // Compare relocations.
   auto eq = [&](const coff_relocation &r1, const coff_relocation &r2) {
     if (r1.Type != r2.Type ||
@@ -255,7 +259,7 @@ void ICF::run() {
 
   // Collect only mergeable sections and group by hash value.
   uint32_t nextId = 1;
-  for (Chunk *c : ctx.symtab.getChunks()) {
+  for (Chunk *c : ctx.getChunks()) {
     if (auto *sc = dyn_cast<SectionChunk>(c)) {
       if (isEligible(sc))
         chunks.push_back(sc);
