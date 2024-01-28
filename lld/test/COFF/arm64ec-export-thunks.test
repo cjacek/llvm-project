@@ -48,7 +48,7 @@ EXP-DISASM-NEXT: 18000301f: cc                           int3
 RUN: llvm-objdump -p exports.dll | FileCheck -check-prefix=EXP-EXPORT %s
 EXP-EXPORT:      Ordinal      RVA  Name
 EXP-EXPORT-NEXT:       1   0x3000  arm64ec_func
-EXP-EXPORT-NEXT:       2   0x6000  data_sym
+EXP-EXPORT-NEXT:       2   0x7000  data_sym
 EXP-EXPORT-NEXT:       3   0x3010  func
 EXP-EXPORT-NEXT:       4   0x2000  x86_64_func
 
@@ -67,7 +67,7 @@ EXP-CHPE-NEXT:    0x3010 -> 0x1000
 EXP-CHPE-NEXT:  ]
 
 RUN: llvm-objdump -s --section=.test exports.dll | FileCheck --check-prefix=EXP-DATA %s
-EXP-DATA: 180006000 10300000 00300000
+EXP-DATA: 180007000 10300000 00300000
 
 RUN: lld-link -out:exports.dll -machine:arm64ec antidep-func.obj x86_64-func.obj loadconfig-arm64ec.obj \
 RUN:          arm64ec-data.obj -dll -noentry -export:arm64ec_func -export:func=arm64ec_func \

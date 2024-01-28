@@ -1,0 +1,87 @@
+REQUIRES: aarch64
+RUN: mkdir -p %t.dir && cd %t.dir
+
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows %S/Inputs/loadconfig-arm64ec.s -o loadconfig-arm64ec.obj
+RUN: llvm-mc -filetype=obj -triple=aarch64-windows %S/Inputs/loadconfig-arm64.s -o loadconfig-arm64.obj
+
+RUN: lld-link -machine:arm64x -out:testz.dll -dll -noentry loadconfig-arm64.obj
+RUN: llvm-readobj --coff-load-config testz.dll | FileCheck -check-prefix=DYNRELOCSZ %s
+
+DYNRELOCSZ:      DynamicRelocations [
+DYNRELOCSZ-NEXT:   Version: 0x1
+DYNRELOCSZ-NEXT:   Arm64X [
+DYNRELOCSZ-NEXT:     Entry [
+DYNRELOCSZ-NEXT:       RVA: 0x7C
+DYNRELOCSZ-NEXT:       Type: VALUE
+DYNRELOCSZ-NEXT:       Size: 0x2
+DYNRELOCSZ-NEXT:       Value: 0x8664
+DYNRELOCSZ-NEXT:     ]
+DYNRELOCSZ-NEXT:     Entry [
+DYNRELOCSZ-NEXT:       RVA: 0x150
+DYNRELOCSZ-NEXT:       Type: VALUE
+DYNRELOCSZ-NEXT:       Size: 0x4
+DYNRELOCSZ-NEXT:       Value: 0x0
+DYNRELOCSZ-NEXT:     ]
+DYNRELOCSZ-NEXT:     Entry [
+DYNRELOCSZ-NEXT:       RVA: 0x154
+DYNRELOCSZ-NEXT:       Type: VALUE
+DYNRELOCSZ-NEXT:       Size: 0x4
+DYNRELOCSZ-NEXT:       Value: 0x0
+DYNRELOCSZ-NEXT:     ]
+DYNRELOCSZ-NEXT:   ]
+DYNRELOCSZ-NEXT: ]
+
+RUN: lld-link -machine:arm64x -out:test.dll -dll -noentry loadconfig-arm64.obj loadconfig-arm64ec.obj
+RUN: llvm-readobj --coff-load-config test.dll | FileCheck -check-prefix=DYNRELOCS %s
+
+DYNRELOCS:      DynamicRelocations [
+DYNRELOCS-NEXT:   Version: 0x1
+DYNRELOCS-NEXT:   Arm64X [
+DYNRELOCS-NEXT:     Entry [
+DYNRELOCS-NEXT:       RVA: 0x7C
+DYNRELOCS-NEXT:       Type: VALUE
+DYNRELOCS-NEXT:       Size: 0x2
+DYNRELOCS-NEXT:       Value: 0x8664
+DYNRELOCS-NEXT:     ]
+DYNRELOCS-NEXT:     Entry [
+DYNRELOCS-NEXT:       RVA: 0x150
+DYNRELOCS-NEXT:       Type: VALUE
+DYNRELOCS-NEXT:       Size: 0x4
+DYNRELOCS-NEXT:       Value: 0x1140
+DYNRELOCS-NEXT:     ]
+DYNRELOCS-NEXT:     Entry [
+DYNRELOCS-NEXT:       RVA: 0x154
+DYNRELOCS-NEXT:       Type: VALUE
+DYNRELOCS-NEXT:       Size: 0x4
+DYNRELOCS-NEXT:       Value: 0x140
+DYNRELOCS-NEXT:     ]
+DYNRELOCS-NEXT:   ]
+DYNRELOCS-NEXT: ]
+
+RUN: llvm-readobj --coff-basereloc test.dll | FileCheck -check-prefix=BASERELOCS %s
+BASERELOCS:      BaseReloc [
+BASERELOCS-NEXT:   Entry {
+BASERELOCS-NEXT:     Type: DIR64
+BASERELOCS-NEXT:     Address: 0x10C8
+BASERELOCS-NEXT:   }
+BASERELOCS-NEXT:   Entry {
+BASERELOCS-NEXT:     Type: DIR64
+BASERELOCS-NEXT:     Address: 0x1198
+BASERELOCS-NEXT:   }
+BASERELOCS-NEXT:   Entry {
+BASERELOCS-NEXT:     Type: DIR64
+BASERELOCS-NEXT:     Address: 0x11B0
+BASERELOCS-NEXT:   }
+BASERELOCS-NEXT:   Entry {
+BASERELOCS-NEXT:     Type: DIR64
+BASERELOCS-NEXT:     Address: 0x11B8
+BASERELOCS-NEXT:   }
+BASERELOCS-NEXT:   Entry {
+BASERELOCS-NEXT:     Type: DIR64
+BASERELOCS-NEXT:     Address: 0x1208
+BASERELOCS-NEXT:   }
+BASERELOCS-NEXT:   Entry {
+BASERELOCS-NEXT:     Type: ABSOLUTE
+BASERELOCS-NEXT:     Address: 0x1000
+BASERELOCS-NEXT:   }
+BASERELOCS-NEXT: ]
