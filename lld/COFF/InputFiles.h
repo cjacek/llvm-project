@@ -39,6 +39,7 @@ class DWARFCache;
 
 namespace coff {
 class COFFLinkerContext;
+class COFFTargetContext;
 
 std::vector<MemoryBufferRef> getArchiveMembers(llvm::object::Archive *file);
 
@@ -82,7 +83,10 @@ public:
   virtual void parse() = 0;
 
   // Returns the CPU type this file was compiled to.
-  virtual MachineTypes getMachineType() { return IMAGE_FILE_MACHINE_UNKNOWN; }
+  virtual MachineTypes getMachineType() const {
+    return IMAGE_FILE_MACHINE_UNKNOWN;
+  }
+  COFFTargetContext &getTarget() const;
 
   MemoryBufferRef mb;
 
@@ -133,7 +137,7 @@ public:
   static bool classof(const InputFile *f) { return f->kind() == ObjectKind; }
   void parse() override;
   void parseLazy();
-  MachineTypes getMachineType() override;
+  MachineTypes getMachineType() const override;
   ArrayRef<Chunk *> getChunks() { return chunks; }
   ArrayRef<SectionChunk *> getDebugChunks() { return debugChunks; }
   ArrayRef<SectionChunk *> getSXDataChunks() { return sxDataChunks; }
@@ -342,6 +346,10 @@ public:
   explicit ImportFile(COFFLinkerContext &ctx, MemoryBufferRef m);
 
   static bool classof(const InputFile *f) { return f->kind() == ImportKind; }
+  MachineTypes getMachineType() const override;
+  bool matches(const ImportFile *other) const;
+  uint16_t getOrdinal() const { return hdr->OrdinalHint; }
+  bool isEC() const { return impECSym != nullptr; }
 
   Symbol *findECExitThunkSymbol() const;
 
@@ -351,6 +359,7 @@ public:
   Symbol *thunkSym = nullptr;
   Symbol *auxThunkSym = nullptr;
   DefinedImportThunk *chkECSym = nullptr;
+  ImportFile *hybridFile = nullptr;
   std::string dllName;
 
 private:
@@ -383,7 +392,7 @@ public:
   ~BitcodeFile();
   static bool classof(const InputFile *f) { return f->kind() == BitcodeKind; }
   ArrayRef<Symbol *> getSymbols() { return symbols; }
-  MachineTypes getMachineType() override;
+  MachineTypes getMachineType() const override;
   void parseLazy();
   std::unique_ptr<llvm::lto::InputFile> obj;
 
@@ -400,7 +409,7 @@ public:
       : InputFile(ctx, DLLKind, m) {}
   static bool classof(const InputFile *f) { return f->kind() == DLLKind; }
   void parse() override;
-  MachineTypes getMachineType() override;
+  MachineTypes getMachineType() const override;
 
   struct Symbol {
     StringRef dllName;
