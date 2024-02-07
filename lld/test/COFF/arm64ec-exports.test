@@ -1,0 +1,47 @@
+REQUIRES: aarch64
+RUN: split-file %s %t.dir && cd %t.dir
+
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows func.s -o func.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows drectve1.s -o drectve1.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows drectve2.s -o drectve2.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows drectve3.s -o drectve3.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows %S/Inputs/loadconfig-arm64ec.s -o loadconfig-arm64ec.obj
+
+RUN: lld-link -out:test.dll func.obj loadconfig-arm64ec.obj -dll -noentry -machine:arm64ec -export:func
+RUN: llvm-readobj --coff-exports test.dll | FileCheck %s
+CHECK: Name: func
+
+RUN: lld-link -out:test2.dll func.obj loadconfig-arm64ec.obj -dll -noentry -machine:arm64ec "-export:#func,EXPORTAS,func"
+RUN: llvm-readobj --coff-exports test2.dll | FileCheck %s
+
+RUN: lld-link -out:test3.dll func.obj loadconfig-arm64ec.obj -dll -noentry -machine:arm64ec "-export:#func"
+RUN: llvm-readobj --coff-exports test3.dll | FileCheck %s
+
+RUN: lld-link -out:test4.dll func.obj loadconfig-arm64ec.obj -dll -noentry -machine:arm64ec drectve1.obj
+RUN: llvm-readobj --coff-exports test4.dll | FileCheck %s
+
+RUN: lld-link -out:test5.dll func.obj loadconfig-arm64ec.obj -dll -noentry -machine:arm64ec drectve2.obj
+RUN: llvm-readobj --coff-exports test5.dll | FileCheck %s
+
+RUN: lld-link -out:test6.dll func.obj loadconfig-arm64ec.obj -dll -noentry -machine:arm64ec drectve3.obj
+RUN: llvm-readobj --coff-exports test6.dll | FileCheck %s
+
+#--- func.s
+    .text
+    .globl "#func"
+    .p2align 2, 0x0
+"#func":
+    mov w0, #2
+    ret
+
+#--- drectve1.s
+    .section .drectve, "yn"
+    .ascii " -export:func"
+
+#--- drectve2.s
+    .section .drectve, "yn"
+    .ascii " -export:#func"
+
+#--- drectve3.s
+    .section .drectve, "yn"
+    .ascii " -export:#func,EXPORTAS,func"

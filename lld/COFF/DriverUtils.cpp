@@ -39,6 +39,7 @@
 #include <optional>
 
 using namespace llvm::COFF;
+using namespace llvm::object;
 using namespace llvm::opt;
 using namespace llvm;
 using llvm::sys::Process;
@@ -633,6 +634,11 @@ err:
 }
 
 static StringRef undecorate(COFFLinkerContext &ctx, StringRef sym) {
+  if (isArm64EC(ctx.config.machine)) {
+    if (std::optional<std::string> demangledName =
+            getArm64ECDemangledFunctionName(sym))
+      return saver().save(*demangledName);
+  }
   if (ctx.config.machine != I386)
     return sym;
   // In MSVC mode, a fully decorated stdcall function is exported
