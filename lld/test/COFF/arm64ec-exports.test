@@ -1,0 +1,127 @@
+REQUIRES: aarch64
+RUN: split-file %s %t.dir && cd %t.dir
+
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows func.s -o func.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows data-mangled.s -o data-mangled.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows data-demangled.s -o data-demangled.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows drectve1.s -o drectve1.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows drectve2.s -o drectve2.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows drectve3.s -o drectve3.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows %S/Inputs/loadconfig-arm64ec.s -o loadconfig-arm64ec.obj
+
+Check that the export function name is always demangled.
+
+RUN: lld-link -out:func.dll func.obj loadconfig-arm64ec.obj -dll -noentry -machine:arm64ec -export:func
+RUN: llvm-readobj --coff-exports func.dll | FileCheck %s
+RUN: llvm-readobj func.lib | FileCheck --check-prefix=IMPLIB %s
+
+RUN: lld-link -out:func2.dll func.obj loadconfig-arm64ec.obj -dll -noentry -machine:arm64ec "-export:#func,EXPORTAS,func"
+RUN: llvm-readobj --coff-exports func2.dll | FileCheck %s
+RUN: llvm-readobj func2.lib | FileCheck --check-prefix=IMPLIB %s
+
+RUN: lld-link -out:func3.dll func.obj loadconfig-arm64ec.obj -dll -noentry -machine:arm64ec "-export:#func"
+RUN: llvm-readobj --coff-exports func3.dll | FileCheck %s
+RUN: llvm-readobj func3.lib | FileCheck --check-prefix=IMPLIB %s
+
+RUN: lld-link -out:func4.dll func.obj loadconfig-arm64ec.obj -dll -noentry -machine:arm64ec drectve1.obj
+RUN: llvm-readobj --coff-exports func4.dll | FileCheck %s
+RUN: llvm-readobj func4.lib | FileCheck --check-prefix=IMPLIB %s
+
+RUN: lld-link -out:func5.dll func.obj loadconfig-arm64ec.obj -dll -noentry -machine:arm64ec drectve2.obj
+RUN: llvm-readobj --coff-exports func5.dll | FileCheck %s
+RUN: llvm-readobj func5.lib | FileCheck --check-prefix=IMPLIB %s
+
+RUN: lld-link -out:func6.dll func.obj loadconfig-arm64ec.obj -dll -noentry -machine:arm64ec drectve3.obj
+RUN: llvm-readobj --coff-exports func6.dll | FileCheck %s
+RUN: llvm-readobj func6.lib | FileCheck --check-prefix=IMPLIB %s
+
+CHECK: Name: func
+
+IMPLIB:      File: func{{.*}}.lib(func{{.*}}.dll)
+IMPLIB-NEXT: Format: COFF-ARM64
+IMPLIB-NEXT: Arch: aarch64
+IMPLIB-NEXT: AddressSize: 64bit
+IMPLIB-EMPTY:
+IMPLIB-NEXT: File: func{{.*}}.lib(func{{.*}}.dll)
+IMPLIB-NEXT: Format: COFF-ARM64
+IMPLIB-NEXT: Arch: aarch64
+IMPLIB-NEXT: AddressSize: 64bit
+IMPLIB-EMPTY:
+IMPLIB-NEXT: File: func{{.*}}.lib(func{{.*}}.dll)
+IMPLIB-NEXT: Format: COFF-ARM64
+IMPLIB-NEXT: Arch: aarch64
+IMPLIB-NEXT: AddressSize: 64bit
+IMPLIB-EMPTY:
+IMPLIB-NEXT: File: func{{.*}}.dll
+IMPLIB-NEXT: Format: COFF-import-file-ARM64EC
+IMPLIB-NEXT: Type: code
+IMPLIB-NEXT: Name type: export as
+IMPLIB-NEXT: Export name: func
+IMPLIB-NEXT: Symbol: __imp_func
+IMPLIB-NEXT: Symbol: func
+IMPLIB-NEXT: Symbol: __imp_aux_func
+IMPLIB-NEXT: Symbol: #func
+
+
+Check data export name is not demangled.
+
+RUN: lld-link -out:data.dll data-demangled.obj loadconfig-arm64ec.obj -dll -noentry -machine:arm64ec -export:data_sym,DATA
+RUN: llvm-readobj --coff-exports data.dll | FileCheck --check-prefix=DATA %s
+RUN: llvm-readobj data.lib | FileCheck --check-prefix=DATA-IMPLIB %s
+
+DATA: Name: data_sym
+
+DATA-IMPLIB:      Format: COFF-import-file-ARM64EC
+DATA-IMPLIB-NEXT: Type: data
+DATA-IMPLIB-NEXT: Name type: name
+DATA-IMPLIB-NEXT: Export name: data_sym
+DATA-IMPLIB-NEXT: Symbol: __imp_data_sym
+
+RUN: lld-link -out:data2.dll data-mangled.obj loadconfig-arm64ec.obj -dll -noentry -machine:arm64ec "-export:#data_sym,DATA"
+RUN: llvm-readobj --coff-exports data2.dll | FileCheck --check-prefix=DATA2 %s
+RUN: llvm-readobj data2.lib | FileCheck --check-prefix=DATA2-IMPLIB %s
+
+DATA2: Name: #data_sym
+
+DATA2-IMPLIB:      Format: COFF-import-file-ARM64EC
+DATA2-IMPLIB-NEXT: Type: data
+DATA2-IMPLIB-NEXT: Name type: name
+DATA2-IMPLIB-NEXT: Export name: #data_sym
+DATA2-IMPLIB-NEXT: Symbol: __imp_data_sym
+
+#--- func.s
+    .weak_anti_dep func
+    func = "#func"
+
+    .text
+    .globl "#func"
+    .p2align 2, 0x0
+"#func":
+    mov w0, #2
+    ret
+
+#--- data-mangled.s
+    .data
+    .globl "#data_sym"
+    .p2align 2, 0x0
+"#data_sym":
+    .word 0x01010101
+
+#--- data-demangled.s
+    .data
+    .globl data_sym
+    .p2align 2, 0x0
+data_sym:
+    .word 0x01010101
+
+#--- drectve1.s
+    .section .drectve, "yn"
+    .ascii " -export:func"
+
+#--- drectve2.s
+    .section .drectve, "yn"
+    .ascii " -export:#func"
+
+#--- drectve3.s
+    .section .drectve, "yn"
+    .ascii " -export:#func,EXPORTAS,func"
