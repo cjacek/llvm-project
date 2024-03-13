@@ -11,6 +11,8 @@ RUN: llvm-mc -filetype=obj -triple=arm64ec-windows test4-arm64ec.s -o test4-arm6
 RUN: llvm-mc -filetype=obj -triple=aarch64-windows test4-arm64.s -o test4-arm64.obj
 RUN: llvm-mc -filetype=obj -triple=arm64ec-windows test5-arm64ec.s -o test5-arm64ec.obj
 RUN: llvm-mc -filetype=obj -triple=aarch64-windows test5-arm64.s -o test5-arm64.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows test6-arm64ec.s -o test6-arm64ec.obj
+RUN: llvm-mc -filetype=obj -triple=aarch64-windows test6-arm64.s -o test6-arm64.obj
 RUN: llvm-mc -filetype=obj -triple=arm64ec-windows stubs.s -o stubs.obj
 RUN: llvm-mc -filetype=obj -triple=arm64ec-windows %S/Inputs/loadconfig-arm64ec.s -o loadconfig-arm64ec.obj
 RUN: llvm-mc -filetype=obj -triple=aarch64-windows %S/Inputs/loadconfig-arm64.s -o loadconfig-arm64.obj
@@ -214,6 +216,45 @@ RUN: llvm-readobj --hex-dump=.testa test5.dll | FileCheck -check-prefix=TEST5A %
 TEST5A: 0x180007000 00200000 08200000 28200000
 
 
+RUN: lld-link -machine:arm64x -dll -noentry -out:test6.dll loadconfig-arm64.obj loadconfig-arm64ec.obj \
+RUN:          stubs.obj test6-arm64ec.obj test6-arm64.obj test-arm64ec.lib test2-arm64.lib
+
+RUN: llvm-readobj --coff-imports test6.dll | FileCheck -check-prefix=IMPORTS6 %s
+
+IMPORTS6:      File: test6.dll
+IMPORTS6-NEXT: Format: COFF-ARM64X
+IMPORTS6-NEXT: Arch: aarch64
+IMPORTS6-NEXT: AddressSize: 64bit
+IMPORTS6-NEXT: Import {
+IMPORTS6-NEXT:   Name: test.dll
+IMPORTS6-NEXT:   ImportLookupTableRVA: 0x3368
+IMPORTS6-NEXT:   ImportAddressTableRVA: 0x2000
+IMPORTS6-NEXT: }
+IMPORTS6-NEXT: Import {
+IMPORTS6-NEXT:   Name: test2.dll
+IMPORTS6-NEXT:   ImportLookupTableRVA: 0x3380
+IMPORTS6-NEXT:   ImportAddressTableRVA: 0x2018
+IMPORTS6-NEXT:   Symbol: otherfunc (0)
+IMPORTS6-NEXT: }
+IMPORTS6-NEXT: HybridObject {
+IMPORTS6-NEXT:   Format: COFF-ARM64EC
+IMPORTS6-NEXT:   Arch: aarch64
+IMPORTS6-NEXT:   AddressSize: 64bit
+IMPORTS6-NEXT:   Import {
+IMPORTS6-NEXT:     Name: test.dll
+IMPORTS6-NEXT:     ImportLookupTableRVA: 0x3368
+IMPORTS6-NEXT:     ImportAddressTableRVA: 0x2000
+IMPORTS6-NEXT:     Symbol: func1 (0)
+IMPORTS6-NEXT:     Symbol: func2 (0)
+IMPORTS6-NEXT:   }
+IMPORTS6-NEXT:   Import {
+IMPORTS6-NEXT:     Name: test2.dll
+IMPORTS6-NEXT:     ImportLookupTableRVA: 0x3388
+IMPORTS6-NEXT:     ImportAddressTableRVA: 0x2020
+IMPORTS6-NEXT:   }
+IMPORTS6-NEXT: }
+
+
 #--- test1-arm64ec.s
     .section .test, "r"
     .rva __imp_func1
@@ -284,6 +325,15 @@ TEST5A: 0x180007000 00200000 08200000 28200000
     .section .testa, "r"
     .rva __imp_func3
     .rva __imp_func4
+    .rva __imp_otherfunc
+
+#--- test6-arm64ec.s
+    .section .test, "r"
+    .rva __imp_func1
+    .rva __imp_func2
+
+#--- test6-arm64.s
+    .section .test, "r"
     .rva __imp_otherfunc
 
 #--- stubs.s

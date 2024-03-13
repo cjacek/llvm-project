@@ -131,7 +131,11 @@ public:
 // Contents of this chunk is always null bytes.
 class NullChunk : public NonSectionChunk {
 public:
-  explicit NullChunk(size_t n) : size(n) { hasData = false; }
+  explicit NullChunk(size_t n, uint32_t align) : size(n) {
+    hasData = false;
+    setAlignment(align);
+  }
+  explicit NullChunk(COFFLinkerContext &ctx) : NullChunk(ctx.config.wordsize, ctx.config.wordsize) {}
   size_t getSize() const override { return size; }
 
   void writeTo(uint8_t *buf) const override {
@@ -769,8 +773,8 @@ void IdataContents::create(COFFLinkerContext &ctx) {
           !s->file->hybridFile) {
         lookupsTerminator = lookupsChunk;
         addressesTerminator = addressesChunk;
-        lookupsChunk = make<NullChunk>(ctx.config.wordsize);
-        addressesChunk = make<NullChunk>(ctx.config.wordsize);
+        lookupsChunk = make<NullChunk>(ctx);
+        addressesChunk = make<NullChunk>(ctx);
 
         ctx.addArm64XReloc(IMAGE_DVRT_ARM64X_FIXUP_TYPE_VALUE, nullptr,
                            lookupsChunk, 0, nullptr, hintChunk,
@@ -798,19 +802,18 @@ void IdataContents::create(COFFLinkerContext &ctx) {
         auxIatCopy.push_back(chunk);
         s->file->auxImpCopySym->setLocation(chunk);
       } else if (ctx.config.machine == ARM64X) {
-        auxIat.push_back(make<NullChunk>(ctx.config.wordsize));
-        auxIatCopy.push_back(make<NullChunk>(ctx.config.wordsize));
+        auxIat.push_back(make<NullChunk>(ctx));
+        auxIatCopy.push_back(make<NullChunk>(ctx));
       }
     }
     // Terminate with null values.
-    lookups.push_back(lookupsTerminator ? lookupsTerminator
-                                        : make<NullChunk>(ctx.config.wordsize));
+    lookups.push_back(lookupsTerminator ? lookupsTerminator : make<NullChunk>(ctx));
     addresses.push_back(addressesTerminator
-                            ? addressesTerminator
-                            : make<NullChunk>(ctx.config.wordsize));
+                        ? addressesTerminator
+                        : make<NullChunk>(ctx));
     if (isArm64EC(ctx.config.machine)) {
-      auxIat.push_back(make<NullChunk>(ctx.config.wordsize));
-      auxIatCopy.push_back(make<NullChunk>(ctx.config.wordsize));
+      auxIat.push_back(make<NullChunk>(ctx));
+      auxIatCopy.push_back(make<NullChunk>(ctx));
     }
 
     for (int i = 0, e = syms.size(); i < e; ++i) {
@@ -846,7 +849,7 @@ void IdataContents::create(COFFLinkerContext &ctx) {
     }
   }
   // Add null terminator.
-  dirs.push_back(make<NullChunk>(sizeof(ImportDirectoryTableEntry)));
+  dirs.push_back(make<NullChunk>(sizeof(ImportDirectoryTableEntry), 4));
 }
 
 std::vector<Chunk *> DelayLoadContents::getChunks() {
@@ -925,10 +928,10 @@ void DelayLoadContents::create() {
           saver().save("__tailMerge_" + syms[0]->getDLLName().lower());
       target.symtab.addSynthetic(tmName, tm);
       // Terminate with null values.
-      addresses.push_back(make<NullChunk>(8));
-      names.push_back(make<NullChunk>(8));
-      if (ctx.config.machine == ARM64EC) {
-        auxIat.push_back(make<NullChunk>(8));
+      addresses.push_back(make<NullChunk>(8, ctx.config.wordsize));
+      names.push_back(make<NullChunk>(8, ctx.config.wordsize));
+      if (target.machine == ARM64EC) {
+        auxIat.push_back(make<NullChunk>(8, ctx.config.wordsize));
         if (ctx.hybridTarget) {
           ctx.addArm64XReloc(IMAGE_DVRT_ARM64X_FIXUP_TYPE_DELTA, nullptr, dir,
                              offsetof(delay_import_directory_table_entry,
@@ -944,8 +947,7 @@ void DelayLoadContents::create() {
       }
     });
 
-    auto *mh = make<NullChunk>(8);
-    mh->setAlignment(8);
+    auto *mh = make<NullChunk>(8, 8);
     moduleHandles.push_back(mh);
 
     // Fill the delay import table header fields.
@@ -958,7 +960,7 @@ void DelayLoadContents::create() {
   if (unwind)
     unwindinfo.push_back(unwind);
   // Add null terminator.
-  dirs.push_back(make<NullChunk>(sizeof(delay_import_directory_table_entry)));
+  dirs.push_back(make<NullChunk>(sizeof(delay_import_directory_table_entry), 4));
 }
 
 Chunk *DelayLoadContents::newTailMergeChunk(COFFTargetContext &target,
