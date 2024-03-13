@@ -1,0 +1,370 @@
+REQUIRES: aarch64
+RUN: split-file %s %t.dir && cd %t.dir
+
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows test1-arm64ec.s -o test1-arm64ec.obj
+RUN: llvm-mc -filetype=obj -triple=aarch64-windows test1-arm64.s -o test1-arm64.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows test2-arm64ec.s -o test2-arm64ec.obj
+RUN: llvm-mc -filetype=obj -triple=aarch64-windows test2-arm64.s -o test2-arm64.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows test3-arm64ec.s -o test3-arm64ec.obj
+RUN: llvm-mc -filetype=obj -triple=aarch64-windows test3-arm64.s -o test3-arm64.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows test4-arm64ec.s -o test4-arm64ec.obj
+RUN: llvm-mc -filetype=obj -triple=aarch64-windows test4-arm64.s -o test4-arm64.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows test5-arm64ec.s -o test5-arm64ec.obj
+RUN: llvm-mc -filetype=obj -triple=aarch64-windows test5-arm64.s -o test5-arm64.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows test6-arm64ec.s -o test6-arm64ec.obj
+RUN: llvm-mc -filetype=obj -triple=aarch64-windows test6-arm64.s -o test6-arm64.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows stubs.s -o stubs.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows %S/Inputs/loadconfig-arm64ec.s -o loadconfig-arm64ec.obj
+RUN: llvm-mc -filetype=obj -triple=aarch64-windows %S/Inputs/loadconfig-arm64.s -o loadconfig-arm64.obj
+RUN: llvm-lib -machine:arm64ec -def:test.def -out:test-arm64ec.lib
+RUN: llvm-lib -machine:arm64 -def:test.def -out:test-arm64.lib
+RUN: llvm-lib -machine:arm64ec -def:test2.def -out:test2-arm64ec.lib
+RUN: llvm-lib -machine:arm64 -def:test2.def -out:test2-arm64.lib
+
+RUN: lld-link -machine:arm64x -dll -noentry -out:test1.dll loadconfig-arm64.obj loadconfig-arm64ec.obj \
+RUN:          stubs.obj test1-arm64ec.obj test1-arm64.obj test-arm64ec.lib test-arm64.lib
+
+RUN: llvm-objdump -d test1.dll | FileCheck -check-prefix=DISASM1 %s
+DISASM1:      0000000180001000 <.text>:
+DISASM1-NEXT: 180001000: f0000010     adrp    x16, 0x180004000
+DISASM1-NEXT: 180001004: f9400610     ldr     x16, [x16, #0x8]
+DISASM1-NEXT: 180001008: d61f0200     br      x16
+DISASM1-NEXT:                 ...
+DISASM1-NEXT: 180002000: 52800040     mov     w0, #0x2                // =2
+DISASM1-NEXT: 180002004: d65f03c0     ret
+DISASM1-NEXT: 180002008: 90000030     adrp    x16, 0x180006000
+DISASM1-NEXT: 18000200c: f9400210     ldr     x16, [x16]
+DISASM1-NEXT: 180002010: d61f0200     br      x16
+DISASM1-NEXT: 180002014: d000000b     adrp    x11, 0x180004000
+DISASM1-NEXT: 180002018: f940016b     ldr     x11, [x11]
+DISASM1-NEXT: 18000201c: 9000000a     adrp    x10, 0x180002000 <.text+0x1000>
+DISASM1-NEXT: 180002020: 9100f14a     add     x10, x10, #0x3c
+DISASM1-NEXT: 180002024: 17fffff7     b       0x180002000 <.text+0x1000>
+DISASM1-NEXT: 180002028: d000000b     adrp    x11, 0x180004000
+DISASM1-NEXT: 18000202c: f940056b     ldr     x11, [x11, #0x8]
+DISASM1-NEXT: 180002030: d0ffffea     adrp    x10, 0x180000000
+DISASM1-NEXT: 180002034: 9100014a     add     x10, x10, #0x0
+DISASM1-NEXT: 180002038: 17fffff2     b       0x180002000 <.text+0x1000>
+DISASM1-NEXT: 18000203c: 52800060     mov     w0, #0x3                // =3
+DISASM1-NEXT: 180002040: d65f03c0     ret
+DISASM1-NEXT:                 ...
+DISASM1-NEXT: 180003000: ff 25 fa 0f 00 00            jmpq    *0xffa(%rip)            # 0x180004000
+
+RUN: llvm-readobj --coff-imports test1.dll | FileCheck -check-prefix=IMPORTS1 %s
+IMPORTS1:      Import {
+IMPORTS1-NEXT:   Name: test.dll
+IMPORTS1-NEXT:   ImportLookupTableRVA: 0x5348
+IMPORTS1-NEXT:   ImportAddressTableRVA: 0x4000
+IMPORTS1-NEXT:   Symbol: func1 (0)
+IMPORTS1-NEXT:   Symbol: func2 (0)
+IMPORTS1-NEXT: }
+IMPORTS1-NEXT: HybridObject {
+IMPORTS1:        Import {
+IMPORTS1-NEXT:     Name: test.dll
+IMPORTS1-NEXT:     ImportLookupTableRVA: 0x5348
+IMPORTS1-NEXT:     ImportAddressTableRVA: 0x4000
+IMPORTS1-NEXT:     Symbol: func1 (0)
+IMPORTS1-NEXT:     Symbol: func2 (0)
+IMPORTS1-NEXT:   }
+IMPORTS1-NEXT: }
+
+RUN: llvm-readobj --hex-dump=.test test1.dll | FileCheck -check-prefix=TEST1 %s
+TEST1:      0x180008000 00600000 00400000 00300000 08200000
+TEST1-NEXT: 0x180008010 08600000 08400000
+
+RUN: llvm-readobj --hex-dump=.testa test1.dll | FileCheck -check-prefix=TEST1A %s
+TEST1A: 0x180009000 00400000 08400000 00100000
+
+
+RUN: lld-link -machine:arm64x -dll -noentry -out:test2.dll loadconfig-arm64.obj loadconfig-arm64ec.obj \
+RUN:          stubs.obj test2-arm64ec.obj test2-arm64.obj test-arm64ec.lib test-arm64.lib
+
+RUN: llvm-readobj --coff-imports test2.dll | FileCheck -check-prefix=IMPORTS2 %s
+IMPORTS2:      Import {
+IMPORTS2-NEXT:   Name: test.dll
+IMPORTS2-NEXT:   ImportLookupTableRVA: 0x3338
+IMPORTS2-NEXT:   ImportAddressTableRVA: 0x2000
+IMPORTS2-NEXT:   Symbol: func3 (0)
+IMPORTS2-NEXT:   Symbol: func1 (0)
+IMPORTS2-NEXT:   Symbol: func2 (0)
+IMPORTS2-NEXT: }
+IMPORTS2-NEXT: HybridObject {
+IMPORTS2:        Import {
+IMPORTS2-NEXT:     Name: test.dll
+IMPORTS2-NEXT:     ImportLookupTableRVA: 0x3340
+IMPORTS2-NEXT:     ImportAddressTableRVA: 0x2008
+IMPORTS2-NEXT:     Symbol: func1 (0)
+IMPORTS2-NEXT:     Symbol: func2 (0)
+IMPORTS2-NEXT:   }
+IMPORTS2-NEXT: }
+
+RUN: llvm-readobj --hex-dump=.test test2.dll | FileCheck -check-prefix=TEST2 %s
+TEST2: 0x180006000 08400000 08200000 10400000 10200000
+
+RUN: llvm-readobj --hex-dump=.testa test2.dll | FileCheck -check-prefix=TEST2A %s
+TEST2A: 0x180007000 08200000 10200000 00200000
+
+RUN: llvm-readobj --hex-dump=.rdata test2.dll | FileCheck -check-prefix=TEST2AUX %s
+TEST2AUX:      0x180004000 00000000 00000000 08100080 01000000
+TEST2AUX-NEXT: 0x180004010 1c100080 01000000 00000000 00000000
+
+
+RUN: lld-link -machine:arm64x -dll -noentry -out:test3.dll loadconfig-arm64.obj loadconfig-arm64ec.obj \
+RUN:          stubs.obj test3-arm64ec.obj test3-arm64.obj test-arm64ec.lib test-arm64.lib
+
+RUN: llvm-readobj --coff-imports test3.dll | FileCheck -check-prefix=IMPORTS3 %s
+IMPORTS3:      Import {
+IMPORTS3-NEXT:   Name: test.dll
+IMPORTS3-NEXT:   ImportLookupTableRVA: 0x3338
+IMPORTS3-NEXT:   ImportAddressTableRVA: 0x2000
+IMPORTS3-NEXT:   Symbol: func1 (0)
+IMPORTS3-NEXT:   Symbol: func2 (0)
+IMPORTS3-NEXT: }
+IMPORTS3-NEXT: HybridObject {
+IMPORTS3:        Import {
+IMPORTS3-NEXT:     Name: test.dll
+IMPORTS3-NEXT:     ImportLookupTableRVA: 0x3338
+IMPORTS3-NEXT:     ImportAddressTableRVA: 0x2000
+IMPORTS3-NEXT:     Symbol: func1 (0)
+IMPORTS3-NEXT:     Symbol: func2 (0)
+IMPORTS3-NEXT:     Symbol: func3 (0)
+IMPORTS3-NEXT:   }
+IMPORTS3-NEXT: }
+
+RUN: llvm-readobj --hex-dump=.test test3.dll | FileCheck -check-prefix=TEST3 %s
+TEST3:      0x180006000 00400000 00200000 08400000 08200000
+TEST3-NEXT: 0x180006010 10400000 10200000
+
+RUN: llvm-readobj --hex-dump=.testa test3.dll | FileCheck -check-prefix=TEST3A %s
+TEST3A: 0x180007000 00200000 08200000
+
+RUN: llvm-readobj --hex-dump=.rdata test3.dll | FileCheck -check-prefix=TEST3AUX %s
+TEST3AUX:      0x180004000 08100080 01000000 1c100080 01000000
+TEST3AUX-NEXT: 0x180004010 30100080 01000000 00000000 00000000
+
+
+RUN: lld-link -machine:arm64x -dll -noentry -out:test4.dll loadconfig-arm64.obj loadconfig-arm64ec.obj \
+RUN:          stubs.obj test4-arm64ec.obj test4-arm64.obj test-arm64ec.lib test-arm64.lib
+
+RUN: llvm-readobj --coff-imports test4.dll | FileCheck -check-prefix=IMPORTS4 %s
+IMPORTS4:      Import {
+IMPORTS4-NEXT:   Name: test.dll
+IMPORTS4-NEXT:   ImportLookupTableRVA: 0x3338
+IMPORTS4-NEXT:   ImportAddressTableRVA: 0x2000
+IMPORTS4-NEXT:   Symbol: func4 (0)
+IMPORTS4-NEXT:   Symbol: func2 (0)
+IMPORTS4-NEXT:   Symbol: func3 (0)
+IMPORTS4-NEXT: }
+IMPORTS4-NEXT: HybridObject {
+IMPORTS4:        Import {
+IMPORTS4-NEXT:     Name: test.dll
+IMPORTS4-NEXT:     ImportLookupTableRVA: 0x3340
+IMPORTS4-NEXT:     ImportAddressTableRVA: 0x2008
+IMPORTS4-NEXT:     Symbol: func2 (0)
+IMPORTS4-NEXT:     Symbol: func3 (0)
+IMPORTS4-NEXT:     Symbol: func1 (0)
+IMPORTS4-NEXT:   }
+IMPORTS4-NEXT: }
+
+RUN: llvm-readobj --hex-dump=.test test4.dll | FileCheck -check-prefix=TEST4 %s
+TEST4:      0x180006000 18400000 18200000 08400000 08200000
+TEST4-NEXT: 0x180006010 10400000 1020000
+
+RUN: llvm-readobj --hex-dump=.testa test4.dll | FileCheck -check-prefix=TEST4A %s
+TEST4A: 0x180007000 08200000 10200000 00200000
+
+
+RUN: lld-link -machine:arm64x -dll -noentry -out:test5.dll loadconfig-arm64.obj loadconfig-arm64ec.obj \
+RUN:          stubs.obj test5-arm64ec.obj test5-arm64.obj test-arm64ec.lib test-arm64.lib \
+RUN:          test2-arm64ec.lib test2-arm64.lib
+
+RUN: llvm-readobj --coff-imports test5.dll | FileCheck -check-prefix=IMPORTS5 %s
+IMPORTS5:      Import {
+IMPORTS5-NEXT:   Name: test.dll
+IMPORTS5-NEXT:   ImportLookupTableRVA: 0x3350
+IMPORTS5-NEXT:   ImportAddressTableRVA: 0x2000
+IMPORTS5-NEXT:   Symbol: func3 (0)
+IMPORTS5-NEXT:   Symbol: func4 (0)
+IMPORTS5-NEXT: }
+IMPORTS5-NEXT: Import {
+IMPORTS5-NEXT:   Name: test2.dll
+IMPORTS5-NEXT:   ImportLookupTableRVA: 0x3378
+IMPORTS5-NEXT:   ImportAddressTableRVA: 0x2028
+IMPORTS5-NEXT:   Symbol: otherfunc (0)
+IMPORTS5-NEXT: }
+IMPORTS5-NEXT: HybridObject {
+IMPORTS5:        Import {
+IMPORTS5-NEXT:     Name: test.dll
+IMPORTS5-NEXT:     ImportLookupTableRVA: 0x3360
+IMPORTS5-NEXT:     ImportAddressTableRVA: 0x2010
+IMPORTS5-NEXT:     Symbol: func1 (0)
+IMPORTS5-NEXT:     Symbol: func2 (0)
+IMPORTS5-NEXT:   }
+IMPORTS5-NEXT:   Import {
+IMPORTS5-NEXT:     Name: test2.dll
+IMPORTS5-NEXT:     ImportLookupTableRVA: 0x3378
+IMPORTS5-NEXT:     ImportAddressTableRVA: 0x2028
+IMPORTS5-NEXT:     Symbol: otherfunc (0)
+IMPORTS5-NEXT:   }
+IMPORTS5-NEXT: }
+
+RUN: llvm-readobj --hex-dump=.test test5.dll | FileCheck -check-prefix=TEST5 %s
+TEST5:      0x180006000 10400000 10200000 18400000 18200000
+TEST5-NEXT: 0x180006010 28400000 28200000
+
+RUN: llvm-readobj --hex-dump=.testa test5.dll | FileCheck -check-prefix=TEST5A %s
+TEST5A: 0x180007000 00200000 08200000 28200000
+
+
+RUN: lld-link -machine:arm64x -dll -noentry -out:test6.dll loadconfig-arm64.obj loadconfig-arm64ec.obj \
+RUN:          stubs.obj test6-arm64ec.obj test6-arm64.obj test-arm64ec.lib test2-arm64.lib
+
+RUN: llvm-readobj --coff-imports test6.dll | FileCheck -check-prefix=IMPORTS6 %s
+
+IMPORTS6:      File: test6.dll
+IMPORTS6-NEXT: Format: COFF-ARM64X
+IMPORTS6-NEXT: Arch: aarch64
+IMPORTS6-NEXT: AddressSize: 64bit
+IMPORTS6-NEXT: Import {
+IMPORTS6-NEXT:   Name: test.dll
+IMPORTS6-NEXT:   ImportLookupTableRVA: 0x3350
+IMPORTS6-NEXT:   ImportAddressTableRVA: 0x2000
+IMPORTS6-NEXT: }
+IMPORTS6-NEXT: Import {
+IMPORTS6-NEXT:   Name: test2.dll
+IMPORTS6-NEXT:   ImportLookupTableRVA: 0x3368
+IMPORTS6-NEXT:   ImportAddressTableRVA: 0x2018
+IMPORTS6-NEXT:   Symbol: otherfunc (0)
+IMPORTS6-NEXT: }
+IMPORTS6-NEXT: HybridObject {
+IMPORTS6-NEXT:   Format: COFF-ARM64EC
+IMPORTS6-NEXT:   Arch: aarch64
+IMPORTS6-NEXT:   AddressSize: 64bit
+IMPORTS6-NEXT:   Import {
+IMPORTS6-NEXT:     Name: test.dll
+IMPORTS6-NEXT:     ImportLookupTableRVA: 0x3350
+IMPORTS6-NEXT:     ImportAddressTableRVA: 0x2000
+IMPORTS6-NEXT:     Symbol: func1 (0)
+IMPORTS6-NEXT:     Symbol: func2 (0)
+IMPORTS6-NEXT:   }
+IMPORTS6-NEXT:   Import {
+IMPORTS6-NEXT:     Name: test2.dll
+IMPORTS6-NEXT:     ImportLookupTableRVA: 0x3370
+IMPORTS6-NEXT:     ImportAddressTableRVA: 0x2020
+IMPORTS6-NEXT:   }
+IMPORTS6-NEXT: }
+
+
+#--- test1-arm64ec.s
+    .section .test, "r"
+    .rva __imp_func1
+    .rva __imp_aux_func1
+    .rva func1
+    .rva "#func1"
+    .rva __imp_func2
+    .rva __imp_aux_func2
+
+#--- test1-arm64.s
+    .section .testa, "r"
+    .rva __imp_func1
+    .rva __imp_func2
+    .rva func2
+
+#--- test2-arm64ec.s
+    .section .test, "r"
+    .rva __imp_func1
+    .rva __imp_aux_func1
+    .rva __imp_func2
+    .rva __imp_aux_func2
+
+#--- test2-arm64.s
+    .section .testa, "r"
+    .rva __imp_func1
+    .rva __imp_func2
+    .rva __imp_func3
+
+#--- test3-arm64ec.s
+    .section .test, "r"
+    .rva __imp_func1
+    .rva __imp_aux_func1
+    .rva __imp_func2
+    .rva __imp_aux_func2
+    .rva __imp_func3
+    .rva __imp_aux_func3
+
+#--- test3-arm64.s
+    .section .testa, "r"
+    .rva __imp_func1
+    .rva __imp_func2
+
+#--- test4-arm64ec.s
+    .section .test, "r"
+    .rva __imp_func1
+    .rva __imp_aux_func1
+    .rva __imp_func2
+    .rva __imp_aux_func2
+    .rva __imp_func3
+    .rva __imp_aux_func3
+
+#--- test4-arm64.s
+    .section .testa, "r"
+    .rva __imp_func2
+    .rva __imp_func3
+    .rva __imp_func4
+
+#--- test5-arm64ec.s
+    .section .test, "r"
+    .rva __imp_func1
+    .rva __imp_aux_func1
+    .rva __imp_func2
+    .rva __imp_aux_func2
+    .rva __imp_otherfunc
+    .rva __imp_aux_otherfunc
+
+#--- test5-arm64.s
+    .section .testa, "r"
+    .rva __imp_func3
+    .rva __imp_func4
+    .rva __imp_otherfunc
+
+#--- test6-arm64ec.s
+    .section .test, "r"
+    .rva __imp_func1
+    .rva __imp_func2
+
+#--- test6-arm64.s
+    .section .test, "r"
+    .rva __imp_otherfunc
+
+#--- stubs.s
+    .text
+    .globl __icall_helper_arm64ec
+    .p2align 2, 0x0
+__icall_helper_arm64ec:
+    mov w0, #2
+    ret
+
+    .section .hybmp$x, "yi"
+    .symidx __imp_func1
+    .symidx func1_exit_thunk
+    .word 4
+
+    .section .wowthk$aa,"xr",discard,func1_exit_thunk
+    .globl func1_exit_thunk
+func1_exit_thunk:
+    mov w0, #3
+    ret
+
+#--- test.def
+NAME test.dll
+EXPORTS
+    mydata DATA
+    func1
+    func2
+    func3
+    func4
+
+#--- test2.def
+NAME test2.dll
+EXPORTS
+    otherfunc
