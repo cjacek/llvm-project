@@ -1180,12 +1180,24 @@ void AArch64AsmPrinter::emitFunctionEntryLabel() {
             cast<MDString>(ECMangled->getOperand(0))->getString();
         MCSymbol *ECMangledSym =
             MMI->getContext().getOrCreateSymbol(ECMangledStr);
-        OutStreamer->emitSymbolAttribute(UnmangledSym, MCSA_WeakAntiDep);
+        MCSymbol *TargetSym;
+        MCSymbolAttr Attr;
+        if (MDNode *Target =
+                MF->getFunction().getMetadata("arm64ec_unmangled_target")) {
+          StringRef TargetStr =
+              cast<MDString>(Target->getOperand(0))->getString();
+          TargetSym = MMI->getContext().getOrCreateSymbol(TargetStr);
+          Attr = MCSA_Weak;
+        } else {
+          TargetSym = ECMangledSym;
+          Attr = MCSA_WeakAntiDep;
+        }
+        OutStreamer->emitSymbolAttribute(UnmangledSym, Attr);
         OutStreamer->emitAssignment(
             UnmangledSym,
-            MCSymbolRefExpr::create(ECMangledSym, MCSymbolRefExpr::VK_WEAKREF,
+            MCSymbolRefExpr::create(TargetSym, MCSymbolRefExpr::VK_WEAKREF,
                                     MMI->getContext()));
-        OutStreamer->emitSymbolAttribute(ECMangledSym, MCSA_WeakAntiDep);
+        OutStreamer->emitSymbolAttribute(ECMangledSym, Attr);
         OutStreamer->emitAssignment(
             ECMangledSym,
             MCSymbolRefExpr::create(CurrentFnSym, MCSymbolRefExpr::VK_WEAKREF,
