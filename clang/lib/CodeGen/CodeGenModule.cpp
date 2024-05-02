@@ -2411,6 +2411,8 @@ void CodeGenModule::SetLLVMFunctionAttributesForDefinition(const Decl *D,
     // much of their semantics.
     if (D->hasAttr<NakedAttr>())
       B.addAttribute(llvm::Attribute::Naked);
+    if (D->hasAttr<HybridPatchableAttr>())
+      B.addAttribute(llvm::Attribute::HybridPatchable);
 
     // OptimizeNone wins over OptimizeForSize and MinSize.
     F->removeFnAttr(llvm::Attribute::OptimizeForSize);
@@ -2419,9 +2421,15 @@ void CodeGenModule::SetLLVMFunctionAttributesForDefinition(const Decl *D,
     // Naked implies noinline: we should not be inlining such functions.
     B.addAttribute(llvm::Attribute::Naked);
     B.addAttribute(llvm::Attribute::NoInline);
+  } else if (D->hasAttr<HybridPatchableAttr>()) {
+    // hybrid_patchable implies noinline: we should not be inlining such
+    // functions.
+    B.addAttribute(llvm::Attribute::HybridPatchable);
+    B.addAttribute(llvm::Attribute::NoInline);
   } else if (D->hasAttr<NoDuplicateAttr>()) {
     B.addAttribute(llvm::Attribute::NoDuplicate);
-  } else if (D->hasAttr<NoInlineAttr>() && !F->hasFnAttribute(llvm::Attribute::AlwaysInline)) {
+  } else if (D->hasAttr<NoInlineAttr>() &&
+             !F->hasFnAttribute(llvm::Attribute::AlwaysInline)) {
     // Add noinline if the function isn't always_inline.
     B.addAttribute(llvm::Attribute::NoInline);
   } else if (D->hasAttr<AlwaysInlineAttr>() &&
