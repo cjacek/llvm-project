@@ -57,6 +57,7 @@ public:
   Function *buildEntryThunk(Function *F);
   void lowerCall(CallBase *CB);
   Function *buildGuestExitThunk(Function *F);
+  Function *buildPatchableThunk(Function *F);
   bool processFunction(Function &F, SetVector<Function *> &DirectCalledFns);
   bool runOnModule(Module &M) override;
 
@@ -64,8 +65,11 @@ private:
   int cfguard_module_flag = 0;
   FunctionType *GuardFnType = nullptr;
   PointerType *GuardFnPtrType = nullptr;
+  FunctionType *DispatchFnType = nullptr;
+  PointerType *DispatchFnPtrType = nullptr;
   Constant *GuardFnCFGlobal = nullptr;
   Constant *GuardFnGlobal = nullptr;
+  Constant *DispatchFnGlobal = nullptr;
   Module *M = nullptr;
 
   Type *PtrTy;
@@ -615,6 +619,78 @@ Function *AArch64Arm64ECCallLowering::buildGuestExitThunk(Function *F) {
   return GuestExit;
 }
 
+Function *AArch64Arm64ECCallLowering::buildPatchableThunk(Function *F) {
+  llvm::raw_null_ostream NullThunkName;
+  FunctionType *Arm64Ty, *X64Ty;
+  getThunkType(F->getFunctionType(), F->getAttributes(),
+               Arm64ECThunkType::GuestExit, NullThunkName, Arm64Ty, X64Ty);
+  auto MangledName = getArm64ECMangledFunctionName(F->getName().str());
+  assert(MangledName && "Can't guest exit to function that's already native");
+  std::string ThunkName = *MangledName;
+  if (ThunkName[0] == '?' && ThunkName.find("@") != std::string::npos) {
+    ThunkName.insert(ThunkName.find("@"), "$hybpatch_thunk");
+  } else {
+    ThunkName.append("$hybpatch_thunk");
+  }
+
+  Function *GuestExit =
+      Function::Create(Arm64Ty, GlobalValue::WeakODRLinkage, 0, ThunkName, M);
+  GuestExit->setComdat(M->getOrInsertComdat(ThunkName));
+  GuestExit->setSection(".wowthk$aa");
+  GuestExit->setMetadata(
+      "arm64ec_unmangled_name",
+      MDNode::get(M->getContext(),
+                  MDString::get(M->getContext(), F->getName())));
+  GuestExit->setMetadata(
+      "arm64ec_ecmangled_name",
+      MDNode::get(M->getContext(),
+                  MDString::get(M->getContext(), *MangledName)));
+  GuestExit->setMetadata(
+      "arm64ec_exp_name",
+      MDNode::get(M->getContext(),
+                  MDString::get(M->getContext(), "EXP+" + *MangledName)));
+  F->setMetadata("arm64ec_hasguestexit", MDNode::get(M->getContext(), {}));
+  BasicBlock *BB = BasicBlock::Create(M->getContext(), "", GuestExit);
+  IRBuilder<> B(BB);
+
+  // Load the global symbol as a pointer to the check function.
+  LoadInst *DispatchLoad = B.CreateLoad(DispatchFnPtrType, DispatchFnGlobal);
+  Value *TargetFn =
+      M->getOrInsertFunction(*MangledName + "$hp_target", F->getFunctionType())
+          .getCallee();
+
+  // Create new dispatch call instruction.
+  Function *Thunk = buildExitThunk(F->getFunctionType(), F->getAttributes());
+  CallInst *Dispatch = B.CreateCall(DispatchFnType, DispatchLoad,
+                                    {B.CreateBitCast(F, B.getPtrTy()),
+                                     B.CreateBitCast(Thunk, B.getPtrTy()),
+                                     B.CreateBitCast(TargetFn, B.getPtrTy())});
+
+  // Ensure that the first argument is passed in the correct register.
+  Dispatch->setCallingConv(CallingConv::CFGuard_Check);
+
+  Value *DispatchRetVal = B.CreateBitCast(Dispatch, PtrTy);
+  SmallVector<Value *> Args;
+  for (Argument &Arg : GuestExit->args())
+    Args.push_back(&Arg);
+  CallInst *Call = B.CreateCall(Arm64Ty, DispatchRetVal, Args);
+  Call->setTailCallKind(llvm::CallInst::TCK_MustTail);
+
+  if (Call->getType()->isVoidTy())
+    B.CreateRetVoid();
+  else
+    B.CreateRet(Call);
+
+  auto SRetAttr = F->getAttributes().getParamAttr(0, Attribute::StructRet);
+  auto InRegAttr = F->getAttributes().getParamAttr(0, Attribute::InReg);
+  if (SRetAttr.isValid() && !InRegAttr.isValid()) {
+    GuestExit->addParamAttr(0, SRetAttr);
+    Call->addParamAttr(0, SRetAttr);
+  }
+
+  return GuestExit;
+}
+
 // Lower an indirect call with inline code.
 void AArch64Arm64ECCallLowering::lowerCall(CallBase *CB) {
   assert(Triple(CB->getModule()->getTargetTriple()).isOSWindows() &&
@@ -670,10 +746,37 @@ bool AArch64Arm64ECCallLowering::runOnModule(Module &Mod) {
 
   GuardFnType = FunctionType::get(PtrTy, {PtrTy, PtrTy}, false);
   GuardFnPtrType = PointerType::get(GuardFnType, 0);
+  DispatchFnType = FunctionType::get(PtrTy, {PtrTy, PtrTy, PtrTy}, false);
+  DispatchFnPtrType = PointerType::get(DispatchFnType, 0);
   GuardFnCFGlobal =
       M->getOrInsertGlobal("__os_arm64x_check_icall_cfg", GuardFnPtrType);
   GuardFnGlobal =
       M->getOrInsertGlobal("__os_arm64x_check_icall", GuardFnPtrType);
+  DispatchFnGlobal =
+      M->getOrInsertGlobal("__os_arm64x_dispatch_call", DispatchFnPtrType);
+
+  SetVector<Function *> PatchableFns;
+  for (Function &F : Mod) {
+    if (!F.hasFnAttribute(Attribute::HybridPatchable) ||
+        F.getName().ends_with("$hp_target"))
+      continue;
+    if (!F.isDeclaration() && !F.hasLocalLinkage()) {
+      if (std::optional<std::string> MangledName =
+              getArm64ECMangledFunctionName(F.getName().str())) {
+
+        std::string OrigName(F.getName());
+        F.setName(MangledName.value() + "$hp_target");
+
+        Function *EF = Function::Create(
+            F.getFunctionType(), GlobalValue::ExternalLinkage, 0, OrigName, M);
+        EF->copyAttributesFrom(&F);
+        F.replaceAllUsesWith(EF);
+        PatchableFns.insert(EF);
+        continue;
+      }
+    }
+    F.removeFnAttr(Attribute::HybridPatchable);
+  }
 
   SetVector<Function *> DirectCalledFns;
   for (Function &F : Mod)
@@ -702,9 +805,14 @@ bool AArch64Arm64ECCallLowering::runOnModule(Module &Mod) {
     ThunkMapping.push_back(
         {F, buildExitThunk(F->getFunctionType(), F->getAttributes()),
          Arm64ECThunkType::Exit});
+    assert(!F->hasFnAttribute(Attribute::HybridPatchable));
     if (!F->hasDLLImportStorageClass())
       ThunkMapping.push_back(
           {buildGuestExitThunk(F), F, Arm64ECThunkType::GuestExit});
+  }
+  for (Function *F : PatchableFns) {
+    Function *Thunk = buildPatchableThunk(F);
+    ThunkMapping.push_back({Thunk, F, Arm64ECThunkType::GuestExit});
   }
 
   if (!ThunkMapping.empty()) {
@@ -738,7 +846,8 @@ bool AArch64Arm64ECCallLowering::processFunction(
   // name (emitting the definition) can grab it from the metadata.
   //
   // FIXME: Handle functions with weak linkage?
-  if (!F.hasLocalLinkage() || F.hasAddressTaken()) {
+  if ((!F.hasLocalLinkage() || F.hasAddressTaken()) &&
+      !F.hasFnAttribute(Attribute::HybridPatchable)) {
     if (std::optional<std::string> MangledName =
             getArm64ECMangledFunctionName(F.getName().str())) {
       F.setMetadata("arm64ec_unmangled_name",
@@ -773,7 +882,8 @@ bool AArch64Arm64ECCallLowering::processFunction(
       // unprototyped functions in C)
       if (Function *F = CB->getCalledFunction()) {
         if (!LowerDirectToIndirect || F->hasLocalLinkage() ||
-            F->isIntrinsic() || !F->isDeclaration())
+            F->isIntrinsic() || !F->isDeclaration() ||
+            F->hasFnAttribute(Attribute::HybridPatchable))
           continue;
 
         DirectCalledFns.insert(F);

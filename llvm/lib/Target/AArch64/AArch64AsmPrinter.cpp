@@ -1167,8 +1167,9 @@ void AArch64AsmPrinter::emitFunctionEntryLabel() {
       !MF->getFunction().hasLocalLinkage()) {
     // For ARM64EC targets, a function definition's name is mangled differently
     // from the normal symbol, emit required aliases here.
-    auto emitFunctionAlias = [&](MCSymbol *Src, MCSymbol *Dst) {
-      OutStreamer->emitSymbolAttribute(Src, MCSA_WeakAntiDep);
+    auto emitFunctionAlias = [&](MCSymbol *Src, MCSymbol *Dst,
+                                 MCSymbolAttr Attr = MCSA_WeakAntiDep) {
+      OutStreamer->emitSymbolAttribute(Src, Attr);
       OutStreamer->emitAssignment(
           Src, MCSymbolRefExpr::create(Dst, MCSymbolRefExpr::VK_None,
                                        MMI->getContext()));
@@ -1186,8 +1187,15 @@ void AArch64AsmPrinter::emitFunctionEntryLabel() {
     if (MCSymbol *UnmangledSym =
             getSymbolFromMetadata("arm64ec_unmangled_name")) {
       MCSymbol *ECMangledSym = getSymbolFromMetadata("arm64ec_ecmangled_name");
+      MCSymbol *ExpSym = getSymbolFromMetadata("arm64ec_exp_name");
 
-      if (ECMangledSym) {
+      if (ExpSym) {
+        // A hybrid patchable function, emit the alias from the unmangled
+        // symbol to x64 thunk and and the alias from the mangled symbol to
+        // patchable guest exit thunk.
+        emitFunctionAlias(ECMangledSym, CurrentFnSym, MCSA_Weak);
+        emitFunctionAlias(UnmangledSym, ExpSym, MCSA_Weak);
+      } else if (ECMangledSym) {
         // An external function, emit the alias from the unmangled symbol to
         // mangled symbol name and the alias from the mangled symbol to guest
         // exit thunk.
