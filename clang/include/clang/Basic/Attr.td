@@ -471,6 +471,9 @@ def TargetELF : TargetSpec {
 def TargetELFOrMachO : TargetSpec {
   let ObjectFormats = ["ELF", "MachO"];
 }
+def TargetArm64EC : TargetSpec {
+  let CustomCode = [{ Target.getTriple().isWindowsArm64EC() }];
+}
 
 def TargetSupportsInitPriority : TargetSpec {
   let CustomCode = [{ !Target.getTriple().isOSzOS() }];
@@ -3948,6 +3951,12 @@ public:
   void setPropagatedToBaseTemplate() { PropagatedToBaseTemplate = true; }
   bool wasPropagatedToBaseTemplate() { return PropagatedToBaseTemplate; }
   }];
+}
+
+def HybridPatchable : DeclOrTypeAttr, TargetSpecificAttr<TargetArm64EC> {
+  let Spellings = [Declspec<"hybrid_patchable">, GCC<"hybrid_patchable">];
+  // let Subjects = SubjectList<[Function]>;
+  let Documentation = [Undocumented];
 }
 
 def DLLImportStaticLocal : InheritableAttr, TargetSpecificAttr<TargetHasDLLImportExport> {
