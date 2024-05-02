@@ -744,6 +744,7 @@ enum AttributeKindCodes {
   ATTR_KIND_CORO_ONLY_DESTROY_WHEN_COMPLETE = 90,
   ATTR_KIND_DEAD_ON_UNWIND = 91,
   ATTR_KIND_RANGE = 92,
+  ATTR_KIND_HYBRID_PATCHABLE = 93,
 };
 
 enum ComdatSelectionKindCodes {
