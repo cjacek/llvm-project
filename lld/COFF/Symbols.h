@@ -344,6 +344,8 @@ public:
   // even if they are marked as an anti-dependency).
   Symbol *ECAlias = nullptr;
 
+  bool isAntiDep = false;
+
   bool isECAlias() { return ECAlias != nullptr; }
 
   // If this symbol is external weak, try to resolve it to a defined
