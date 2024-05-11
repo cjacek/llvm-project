@@ -11,15 +11,15 @@ define void @caller() nounwind {
 ; CHECK-NEXT: .type   32;
 ; CHECK-NEXT: .endef
 ; CHECK-NEXT: .weak_anti_dep  caller
-; CHECK-NEXT: .set caller, "#caller"@WEAKREF
+; CHECK-NEXT: .set caller, "#caller"{{$}}
 
 ; CHECK:      .def    func;
 ; CHECK-NEXT: .type   32;
 ; CHECK-NEXT: .endef
 ; CHECK-NEXT: .weak_anti_dep  func
-; CHECK-NEXT: .set func, "#func"@WEAKREF
+; CHECK-NEXT: .set func, "#func"{{$}}
 ; CHECK-NEXT: .def    "#func";
 ; CHECK-NEXT: .type   32;
 ; CHECK-NEXT: .endef
 ; CHECK-NEXT: .weak_anti_dep  "#func"
-; CHECK-NEXT: .set "#func", "#func$exit_thunk"@WEAKREF
+; CHECK-NEXT: .set "#func", "#func$exit_thunk"{{$}}
