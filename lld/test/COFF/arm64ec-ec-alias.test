@@ -1,0 +1,18 @@
+REQUIRES: aarch64
+RUN: split-file %s %t.dir && cd %t.dir
+
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows mangled-func.s -o mangled-func.obj
+RUN: llvm-mc -filetype=obj -triple=arm64ec-windows ref.s -o ref.obj
+RUN: lld-link -machine:arm64ec -dll -noentry mangled-func.obj ref.obj "-export:#func"
+
+#--- mangled-func.s
+        .text
+	.globl	"#func"
+	.p2align 2
+"#func":
+	mov x0, #1
+	ret
+
+#--- ref.s
+        .data
+        .rva func
