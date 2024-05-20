@@ -707,17 +707,23 @@ Symbol *LinkerDriver::addUndefined(COFFTargetContext &target, StringRef name,
     b->isGCRoot = true;
     ctx.config.gcroot.push_back(b);
   }
-  if (aliasEC && target.machine == ARM64EC && isa<Undefined>(b)) {
-    auto u = cast<Undefined>(b);
-    if (!u->weakAlias) {
-      if (std::optional<std::string> mangledName =
-              getArm64ECMangledFunctionName(name)) {
+  if (aliasEC && target.machine == ARM64EC) {
+    if (std::optional<std::string> mangledName =
+            getArm64ECMangledFunctionName(name)) {
+      auto u = dyn_cast<Undefined>(b);
+      if (u && !u->weakAlias) {
         u->weakAlias = target.symtab.addUndefined(saver().save(*mangledName));
         if (Undefined *ut = dyn_cast<Undefined>(u->weakAlias)) {
           u->ECAlias = ut;
           ut->ECAlias = u;
         }
       }
+    } else {
+      std::optional<std::string> unmangledName = getArm64ECDemangledFunctionName(name);
+      Symbol *us = target.symtab.addUndefined(saver().save(*unmangledName));
+      auto u = dyn_cast<Undefined>(us);
+      if (u && !u->weakAlias)
+        u->weakAlias = b;
     }
   }
   return b;
