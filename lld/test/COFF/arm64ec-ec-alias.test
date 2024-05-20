@@ -1,9 +1,11 @@
-REQUIRES: aarch64
+REQUIRES: aarch64, x86
 RUN: split-file %s %t.dir && cd %t.dir
 
 RUN: llvm-mc -filetype=obj -triple=arm64ec-windows mangled-func.s -o mangled-func.obj
 RUN: llvm-mc -filetype=obj -triple=arm64ec-windows ref.s -o ref.obj
+RUN: llvm-mc -filetype=obj -triple=x86_64-windows ref.s -o ref-x64.obj
 RUN: lld-link -machine:arm64ec -dll -noentry mangled-func.obj ref.obj "-export:#func"
+RUN: lld-link -machine:arm64ec -dll -noentry mangled-func.obj ref-x64.obj
 
 #--- mangled-func.s
         .text
