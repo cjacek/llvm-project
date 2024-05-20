@@ -571,7 +571,22 @@ void ObjFile::initializeSymbols() {
 
 Symbol *ObjFile::createUndefined(COFFSymbolRef sym) {
   StringRef name = check(coffObj->getSymbolName(sym));
-  return getTarget().symtab.addUndefined(name, this, sym.isWeakExternal());
+  Symbol *s = getTarget().symtab.addUndefined(name, this, sym.isWeakExternal());
+  auto u = dyn_cast<Undefined>(s);
+  if (u && !u->weakAlias && getMachineType() == AMD64) {
+    COFFTargetContext &target = ctx.getTarget(AMD64);
+    if (target.machine == ARM64EC) {
+       if (std::optional<std::string> mangledName = getArm64ECMangledFunctionName(name)) {
+         Symbol *m = getTarget().symtab.addUndefined(saver().save(*mangledName), this, false);
+         u->weakAlias = m;
+         if (auto *um = dyn_cast<Undefined>(m)) {
+           u->ECAlias = um;
+           um->ECAlias = u;
+         }
+       }
+    }
+  }
+  return s;
 }
 
 static const coff_aux_section_definition *findSectionDef(COFFObjectFile *obj,
