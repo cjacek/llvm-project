@@ -710,6 +710,12 @@ Symbol *LinkerDriver::addUndefined(StringRef name, bool aliasEC) {
         Symbol *t = ctx.symtab.addUndefined(saver().save(*mangledName));
         u->setWeakAlias(t, true);
       }
+    } else {
+      std::optional<std::string> unmangledName = getArm64ECDemangledFunctionName(name);
+      Symbol *us = ctx.symtab.addUndefined(saver().save(*unmangledName));
+      auto u = dyn_cast<Undefined>(us);
+      if (u && !u->weakAlias)
+        u->setWeakAlias(b, true);
     }
   }
   return b;
