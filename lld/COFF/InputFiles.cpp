@@ -534,7 +534,17 @@ void ObjFile::initializeSymbols() {
 
 Symbol *ObjFile::createUndefined(COFFSymbolRef sym, bool overrideLazy) {
   StringRef name = check(coffObj->getSymbolName(sym));
-  return ctx.symtab.addUndefined(name, this, overrideLazy);
+  Symbol *s = ctx.symtab.addUndefined(name, this, overrideLazy);
+  auto u = dyn_cast<Undefined>(s);
+  if (u && !u->weakAlias && getMachineType() == AMD64) {
+    if (ctx.config.machine == ARM64EC) {
+       if (std::optional<std::string> mangledName = getArm64ECMangledFunctionName(name)) {
+         Symbol *m = ctx.symtab.addUndefined(saver().save(*mangledName), this, false);
+         u->setWeakAlias(m, true);
+       }
+    }
+  }
+  return s;
 }
 
 static const coff_aux_section_definition *findSectionDef(COFFObjectFile *obj,
