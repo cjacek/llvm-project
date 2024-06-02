@@ -1364,6 +1364,13 @@ void LinkerDriver::maybeMakeECThunk(StringRef name, Symbol *&sym) {
   else
     expName = saver().save("EXP+" + name);
   sym = addUndefined(ctx.getTarget(ARM64EC), expName);
+  if (auto unmangledName = getArm64ECDemangledFunctionName(def->getName())) {
+    auto u = dyn_cast_or_null<Undefined>(ctx.getTarget(ARM64EC).symtab.find(*unmangledName));
+    if (u && u->weakAlias == def && u->isAntiDep) {
+      u->weakAlias = sym;
+      u->isAntiDep = false;
+    }
+  }
   if (auto undef = dyn_cast<Undefined>(sym)) {
     if (!undef->weakAlias)
       replaceSymbol<DefinedSynthetic>(undef, undef->getName(),
