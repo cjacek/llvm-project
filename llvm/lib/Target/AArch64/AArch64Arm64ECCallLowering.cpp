@@ -774,6 +774,11 @@ bool AArch64Arm64ECCallLowering::runOnModule(Module &Mod) {
       FnsMap[A] = GlobalAlias::create(GlobalValue::LinkOnceODRLinkage,
                                       MangledName.value(), &F);
       PatchableFns.insert(A);
+
+      if (F.hasDLLExportStorageClass()) {
+        A->setDLLStorageClass(GlobalValue::DLLExportStorageClass);
+        F.setDLLStorageClass(GlobalValue::DefaultStorageClass);
+      }
     }
   }
 
