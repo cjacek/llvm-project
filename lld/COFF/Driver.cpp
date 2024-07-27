@@ -2521,6 +2521,7 @@ void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
         if (auto *u = dyn_cast<Undefined>(sym))
           if (!u->weakAlias || u->isECAlias()) {
             u->weakAlias = ctx.symtab.addUndefined(to);
+            u->isAntiDep = false;
             if (u->ECAlias) {
               cast<Undefined>(u->ECAlias)->ECAlias = nullptr;
               u->ECAlias = nullptr;
