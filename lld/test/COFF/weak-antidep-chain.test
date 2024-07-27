@@ -1,0 +1,67 @@
+REQUIRES: x86
+RUN: split-file %s %t.dir && cd %t.dir
+
+RUN: llvm-mc -filetype=obj -triple=x86_64-windows chain-bad.s -o chain-bad.obj
+RUN: llvm-mc -filetype=obj -triple=x86_64-windows chain-bad2.s -o chain-bad2.obj
+RUN: llvm-mc -filetype=obj -triple=x86_64-windows globals-bad.s -o globals-bad.obj
+RUN: llvm-mc -filetype=obj -triple=x86_64-windows chain-good.s -o chain-good.obj
+RUN: llvm-mc -filetype=obj -triple=x86_64-windows chain-good2.s -o chain-good2.obj
+RUN: llvm-mc -filetype=obj -triple=x86_64-windows globals-good.s -o globals-good.obj
+
+RUN: lld-link -machine:amd64 -dll -noentry -out:test.dll chain-good.obj globals-good.obj
+RUN: lld-link -machine:amd64 -dll -noentry -out:test.dll chain-good2.obj globals-good.obj
+
+RUN: not lld-link -machine:amd64 -dll -noentry -out:test.dll chain-bad.obj globals-bad.obj 2>&1 \
+RUN:              | FileCheck -check-prefix=ANTIDEP %s
+RUN: not lld-link -machine:amd64 -dll -noentry -out:test.dll chain-bad2.obj globals-bad.obj 2>&1 \
+RUN:              | FileCheck -check-prefix=ANTIDEP %s
+
+ANTIDEP:      lld-link: error: undefined symbol: bad_sym
+ANTIDEP-NEXT: >>> referenced by chain-bad
+
+#--- chain-bad.s
+    .weak_anti_dep bad_sym
+.set bad_sym, bad_sym2
+    .weak_anti_dep bad_sym2
+.set bad_sym2, bad_sym3
+    .weak_anti_dep bad_sym3
+
+#--- chain-bad2.s
+    .weak bad_sym
+.set bad_sym, bad_sym2
+    .weak_anti_dep bad_sym2
+.set bad_sym2, bad_sym3
+
+#--- globals-bad.s
+    .section .test, "r"
+    .global bad_sym3
+bad_sym3:
+    .long 0
+
+#--- chain-good.s
+    .weak_anti_dep good_sym
+.set good_sym, good_sym2
+    .weak_anti_dep good_sym2
+.set good_sym2, good_sym3
+    .weak_anti_dep good_sym3
+.set good_sym3, good_sym4
+    .weak_anti_dep good_sym4
+
+#--- chain-good2.s
+    .weak_anti_dep good_sym
+.set good_sym, good_sym2
+    .weak_anti_dep good_sym2
+.set good_sym2, good_sym3
+    .weak_anti_dep good_sym3
+.set good_sym3, weak_sym
+    .weak weak_sym
+.set weak_sym, good_sym4
+    .weak_anti_dep good_sym4
+
+#--- globals-good.s
+    .section .test, "r"
+    .global good_sym2
+    .global good_sym4
+good_sym2:
+good_sym4:
+    .long 0
