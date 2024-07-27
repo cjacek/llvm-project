@@ -135,6 +135,8 @@ Defined *Undefined::getWeakAlias() {
   // A weak alias may be a weak alias to another symbol, so check recursively.
   SmallSet<Symbol *, 4> weakChain;
   for (Symbol *a = weakAlias; a; a = cast<Undefined>(a)->weakAlias) {
+    if (a->isAntiDep)
+      break;
     if (weakChain.contains(a))
       break; // We have a cycle.
     if (auto *d = dyn_cast<Defined>(a))
@@ -156,6 +158,7 @@ bool Undefined::resolveWeakAlias() {
   // Symbols. For that reason we need to check which type of symbol we
   // are dealing with and copy the correct number of bytes.
   StringRef name = getName();
+  bool wasAntiDep = isAntiDep;
   if (isa<DefinedRegular>(d))
     memcpy(this, d, sizeof(DefinedRegular));
   else if (isa<DefinedAbsolute>(d))
@@ -165,6 +168,7 @@ bool Undefined::resolveWeakAlias() {
 
   nameData = name.data();
   nameSize = name.size();
+  isAntiDep = isAntiDep || wasAntiDep;
   return true;
 }
 
