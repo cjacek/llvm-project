@@ -1,0 +1,36 @@
+REQUIRES: x86
+RUN: split-file %s %t.dir && cd %t.dir
+
+RUN: llvm-mc -filetype=obj -triple=x86_64-windows chains.s -o chains.obj
+RUN: llvm-mc -filetype=obj -triple=x86_64-windows globals.s -o globals.obj
+
+RUN: not lld-link -machine:amd64 -dll -noentry -out:test.dll chains.obj globals.obj 2>&1 \
+RUN:              | FileCheck -check-prefix=ANTIDEP %s
+
+ANTIDEP: lld-link: error: undefined symbol: bad_sym
+ANTIDEP-NEXT: >>> referenced by chains.obj
+
+#--- chains.s
+    .weak_anti_dep bad_sym
+.set bad_sym, bad_sym2
+    .weak_anti_dep bad_sym2
+.set bad_sym2, bad_sym3
+    .weak_anti_dep bad_sym3
+
+    .weak_anti_dep good_sym
+.set good_sym, good_sym2
+    .weak_anti_dep good_sym2
+.set good_sym2, good_sym3
+    .weak_anti_dep good_sym3
+.set good_sym3, good_sym4
+    .weak_anti_dep good_sym4
+
+#--- globals.s
+    .section .test, "r"
+    .global bad_sym3
+    .global good_sym2
+    .global good_sym4
+bad_sym3:
+good_sym2:
+good_sym4:
+    .long 0

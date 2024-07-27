@@ -101,7 +101,7 @@ protected:
       : symbolKind(k), isExternal(true), isCOMDAT(false),
         writtenToSymtab(false), isUsedInRegularObj(false),
         pendingArchiveLoad(false), isGCRoot(false), isRuntimePseudoReloc(false),
-        deferUndefined(false), canInline(true), isWeak(false),
+        deferUndefined(false), canInline(true), isWeak(false), isAntiDep(false),
         nameSize(n.size()), nameData(n.empty() ? nullptr : n.data()) {
     assert((!n.empty() || k <= LastDefinedCOFFKind) &&
            "If the name is empty, the Symbol must be a DefinedCOFF.");
@@ -145,6 +145,8 @@ public:
   // This information isn't written to the output; rather, it's used for
   // managing weak symbol overrides.
   unsigned isWeak : 1;
+
+  unsigned isAntiDep : 1;
 
 protected:
   // Symbol name length. Assume symbol lengths fit in a 32-bit integer.
@@ -343,8 +345,6 @@ public:
   // such aliases (while it's not allowed for other weak aliases,
   // even if they are marked as an anti-dependency).
   Symbol *ECAlias = nullptr;
-
-  bool isAntiDep = false;
 
   bool isECAlias() { return ECAlias != nullptr; }
 
