@@ -27,10 +27,10 @@ EXPORT-NEXT:       1   0x2000  func
 RUN: llvm-readobj --coff-load-config out.dll | FileCheck -check-prefix=CHPE %s
 CHPE:       CodeMap [
 CHPE-NEXT:    0x1000 - 0x1008  ARM64EC
-CHPE-NEXT:    0x2000 - 0x200A  X64
+CHPE-NEXT:    0x2000 - 0x2006  X64
 CHPE-NEXT:  ]
 CHPE-NEXT:  CodeRangesToEntryPoints [
-CHPE-NEXT:    0x2000 - 0x200A -> 0x2000
+CHPE-NEXT:    0x2000 - 0x2006 -> 0x2000
 CHPE-NEXT:  ]
 CHPE-NEXT:  RedirectionMetadata [
 CHPE-NEXT:    0x2000 -> 0x1000
@@ -43,6 +43,10 @@ RUN: llvm-objdump -p out2.dll | FileCheck -check-prefix=EXPORT %s
 RUN: llvm-readobj --coff-load-config out2.dll | FileCheck -check-prefix=CHPE %s
 
 #--- func.s
+    .def "#func$hp_target"
+    .scl 2
+    .type 32
+    .endef
     .section .text,"xr",discard,"#func$hp_target"
     .globl "#func$hp_target"
     .p2align 2, 0x0
@@ -50,16 +54,31 @@ RUN: llvm-readobj --coff-load-config out2.dll | FileCheck -check-prefix=CHPE %s
     mov w0, #2
     ret
 
-    .weak_anti_dep func
-func = "EXP+#func"
-    .weak_anti_dep "#func"
-"#func" = "#func$hp_target"
+    .def "EXP+#func"
+    .scl 2
+    .type 32
+    .endef
+    .def func
+    .scl 2
+    .type 32
+    .endef
+    .weak func
+.set func, "EXP+#func"
+    .weak "#func"
+.set "#func", "#func$hp_target"
+
+        .data
+        .rva func
+        .rva "#func$hp_target"
 
 #--- thunk.s
+    .def "EXP+#func"
+    .scl 2
+    .type 32
+    .endef
     .section .wowthk$aa,"xr",discard,"EXP+#func"
     .globl "EXP+#func"
     .p2align 2, 0x0
 "EXP+#func":
     movl $3, %eax
     retq
-    .rva "#func$hp_target"
