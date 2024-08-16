@@ -25,6 +25,7 @@ namespace lld::coff {
 class Chunk;
 class CommonChunk;
 class COFFLinkerContext;
+class COFFTargetContext;
 class Defined;
 class DefinedAbsolute;
 class DefinedRegular;
@@ -47,9 +48,7 @@ class Symbol;
 // There is one add* function per symbol type.
 class SymbolTable {
 public:
-  SymbolTable(COFFLinkerContext &c) : ctx(c) {}
-
-  void addFile(InputFile *file);
+  SymbolTable(COFFTargetContext &t) : target(t) {}
 
   // Emit errors for symbols that cannot be resolved.
   void reportUnresolvable();
@@ -63,9 +62,6 @@ public:
   // doing stdcall fixups.
   void loadMinGWSymbols();
   bool handleMinGWAutomaticImport(Symbol *sym, StringRef name);
-
-  // Returns a list of chunks of selected symbols.
-  std::vector<Chunk *> getChunks() const;
 
   // Returns a symbol for a given name. Returns a nullptr if not found.
   Symbol *find(StringRef name) const;
@@ -145,11 +141,10 @@ private:
 
   llvm::DenseMap<llvm::CachedHashStringRef, Symbol *> symMap;
   std::unique_ptr<BitcodeCompiler> lto;
-  bool ltoCompilationDone = false;
   std::vector<std::pair<Symbol *, Symbol *>> entryThunks;
   llvm::DenseMap<Symbol *, Symbol *> exitThunks;
 
-  COFFLinkerContext &ctx;
+  COFFTargetContext &target;
 };
 
 std::vector<std::string> getSymbolLocations(ObjFile *file, uint32_t symIndex);
