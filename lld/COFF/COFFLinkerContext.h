@@ -11,6 +11,7 @@
 
 #include "Chunks.h"
 #include "Config.h"
+#include "DLL.h"
 #include "DebugTypes.h"
 #include "Driver.h"
 #include "InputFiles.h"
@@ -21,6 +22,26 @@
 
 namespace lld::coff {
 
+class COFFTargetContext {
+public:
+  COFFTargetContext(COFFLinkerContext &ctx) : ctx(ctx), symtab(*this) {}
+
+  llvm::COFF::MachineTypes machine = IMAGE_FILE_MACHINE_UNKNOWN;
+
+  COFFLinkerContext &ctx;
+  SymbolTable symtab;
+  Symbol *entry = nullptr;
+
+  std::vector<Export> exports;
+  llvm::DenseSet<StringRef> directivesExports;
+  bool hadExplicitExports;
+  EdataContents edata;
+  Chunk *edataStart = nullptr;
+  Chunk *edataEnd = nullptr;
+
+  Symbol *delayLoadHelper = nullptr;
+};
+
 class COFFLinkerContext : public CommonLinkerContext {
 public:
   COFFLinkerContext();
@@ -29,7 +50,6 @@ public:
   ~COFFLinkerContext() = default;
 
   LinkerDriver driver;
-  SymbolTable symtab;
   COFFOptTable optTable;
 
   std::vector<ObjFile *> objFileInstances;
@@ -54,6 +74,22 @@ public:
   OutputSection *getOutputSection(const Chunk *c) const {
     return c->osidx == 0 ? nullptr : outputSections[c->osidx - 1];
   }
+
+  void addFile(InputFile *file);
+  void setMachine(llvm::COFF::MachineTypes machine);
+
+  std::vector<Arm64XDynamicRelocEntry> arm64xRelocs;
+  void addArm64XReloc(llvm::COFF::Arm64XFixupType type,
+                      lld::coff::Defined *offsetSym,
+                      lld::coff::Chunk *offsetChunk, uint16_t offset,
+                      lld::coff::Defined *sym, lld::coff::Chunk *chunk,
+                      uint64_t value, uint8_t size) {
+    arm64xRelocs.emplace_back(type, offsetSym, offsetChunk, offset, sym, chunk,
+                              value, size);
+  }
+
+  // Returns a list of chunks of selected symbols.
+  std::vector<Chunk *> getChunks() const;
 
   // Fake sections for parsing bitcode files.
   FakeSection ltoTextSection;
@@ -87,7 +123,23 @@ public:
   Timer tpiStreamLayoutTimer;
   Timer diskCommitTimer;
 
+  bool ltoCompilationDone = false;
+
   Configuration config;
+  COFFTargetContext primaryTarget;
+  std::optional<COFFTargetContext> hybridTarget;
+
+  void forEachTarget(std::function<void(COFFTargetContext &ctx)> f) {
+    f(primaryTarget);
+    if (hybridTarget)
+      f(*hybridTarget);
+  }
+
+  COFFTargetContext &getTarget(llvm::COFF::MachineTypes machine) {
+    if (hybridTarget && (machine == ARM64EC || machine == AMD64))
+      return *hybridTarget;
+    return primaryTarget;
+  }
 };
 
 } // namespace lld::coff

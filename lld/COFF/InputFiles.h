@@ -39,6 +39,7 @@ class DWARFCache;
 
 namespace coff {
 class COFFLinkerContext;
+class COFFTargetContext;
 
 std::vector<MemoryBufferRef> getArchiveMembers(llvm::object::Archive *file);
 
@@ -87,6 +88,7 @@ public:
   virtual MachineTypes getMachineType() const {
     return IMAGE_FILE_MACHINE_UNKNOWN;
   }
+  COFFTargetContext &getTarget() const;
 
   MemoryBufferRef mb;
 
@@ -347,10 +349,14 @@ public:
 
   static bool classof(const InputFile *f) { return f->kind() == ImportKind; }
   MachineTypes getMachineType() const override;
+  bool matches(const ImportFile *other) const;
+  uint16_t getOrdinal() const { return hdr->OrdinalHint; }
+  bool isEC() const { return impECSym != nullptr; }
 
   DefinedImportData *impSym = nullptr;
   Defined *thunkSym = nullptr;
   ImportThunkChunkARM64EC *impchkThunk = nullptr;
+  ImportFile *hybridFile = nullptr;
   std::string dllName;
 
 private:

@@ -42,7 +42,7 @@ public:
   DelayLoadContents(COFFLinkerContext &ctx) : ctx(ctx) {}
   void add(DefinedImportData *sym) { imports.push_back(sym); }
   bool empty() { return imports.empty(); }
-  void create(Defined *helper);
+  void create();
   std::vector<Chunk *> getChunks();
   std::vector<Chunk *> getDataChunks();
   ArrayRef<Chunk *> getCodeChunks() { return thunks; }
@@ -55,12 +55,13 @@ public:
   uint64_t getDirSize();
 
 private:
-  Chunk *newThunkChunk(DefinedImportData *s, Chunk *tailMerge);
-  Chunk *newTailMergeChunk(Chunk *dir);
-  Chunk *newTailMergePDataChunk(Chunk *tm, Chunk *unwind);
-  Chunk *newTailMergeUnwindInfoChunk();
+  Chunk *newThunkChunk(COFFTargetContext &target, DefinedImportData *s,
+                       Chunk *tailMerge);
+  Chunk *newTailMergeChunk(COFFTargetContext &target, Chunk *dir);
+  Chunk *newTailMergePDataChunk(COFFTargetContext &target, Chunk *tm,
+                                Chunk *unwind);
+  Chunk *newTailMergeUnwindInfoChunk(COFFTargetContext &target);
 
-  Defined *helper;
   std::vector<DefinedImportData *> imports;
   std::vector<Chunk *> dirs;
   std::vector<Chunk *> moduleHandles;
@@ -81,15 +82,13 @@ private:
 // EdataContents creates all chunks for the DLL export table.
 class EdataContents {
 public:
-  EdataContents(COFFLinkerContext &ctx);
+  void create(COFFTargetContext &target);
   std::vector<Chunk *> chunks;
 
   uint64_t getRVA() { return chunks[0]->getRVA(); }
   uint64_t getSize() {
     return chunks.back()->getRVA() + chunks.back()->getSize() - getRVA();
   }
-
-  COFFLinkerContext &ctx;
 };
 
 } // namespace lld::coff
