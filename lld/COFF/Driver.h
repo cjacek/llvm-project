@@ -111,7 +111,7 @@ private:
   StringRef findLib(StringRef filename);
   StringRef findLibMinGW(StringRef filename);
 
-  bool findUnderscoreMangle(StringRef sym);
+  bool findUnderscoreMangle(COFFTargetContext &target, StringRef sym);
 
   // Determines the location of the sysroot based on `args`, environment, etc.
   void detectWinSysRoot(const llvm::opt::InputArgList &args);
@@ -142,7 +142,7 @@ private:
 
   void createImportLibrary(bool asLib);
 
-  void parseModuleDefs(StringRef path);
+  void parseModuleDefs(COFFTargetContext &target, StringRef path);
 
   // Parse an /order file. If an option is given, the linker places COMDAT
   // sections int he same order as their names appear in the given file.
@@ -162,7 +162,8 @@ private:
   // trees into one resource tree.
   void convertResources();
 
-  void maybeExportMinGWSymbols(const llvm::opt::InputArgList &args);
+  void maybeExportMinGWSymbols(COFFTargetContext &target,
+                               const llvm::opt::InputArgList &args);
 
   // We don't want to add the same file more than once.
   // Files are uniquified by their filesystem and file number.
@@ -170,9 +171,10 @@ private:
 
   std::set<std::string> visitedLibs;
 
-  Symbol *addUndefined(StringRef sym, bool aliasEC = false);
+  Symbol *addUndefined(COFFTargetContext &target, StringRef sym,
+                       bool aliasEC = false);
 
-  StringRef mangleMaybe(Symbol *s);
+  StringRef mangleMaybe(COFFTargetContext &target, Symbol *s);
 
   // Windows specific -- "main" is not the only main function in Windows.
   // You can choose one from these four -- {w,}{WinMain,main}.
@@ -196,7 +198,6 @@ private:
   std::vector<StringRef> filePaths;
   std::vector<MemoryBufferRef> resources;
 
-  llvm::DenseSet<StringRef> directivesExports;
   llvm::DenseSet<StringRef> excludedSymbols;
 
   COFFLinkerContext &ctx;
@@ -260,8 +261,8 @@ private:
 
   // Used for dllexported symbols.
   Export parseExport(StringRef arg);
-  void fixupExports();
-  void assignExportOrdinals();
+  void fixupExports(COFFTargetContext &target);
+  void assignExportOrdinals(COFFTargetContext &target);
 
   // Parses a string in the form of "key=value" and check
   // if value matches previous values for the key.
