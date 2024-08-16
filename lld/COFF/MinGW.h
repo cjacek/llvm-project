@@ -25,7 +25,7 @@ class COFFLinkerContext;
 // symbols for MinGW.
 class AutoExporter {
 public:
-  AutoExporter(COFFLinkerContext &ctx,
+  AutoExporter(COFFNamespace &ns,
                const llvm::DenseSet<StringRef> &manualExcludeSymbols);
 
   void addWholeArchive(StringRef path);
@@ -42,7 +42,7 @@ public:
   bool shouldExport(Defined *sym) const;
 
 private:
-  COFFLinkerContext &ctx;
+  COFFNamespace &ns;
 };
 
 void writeDefFile(StringRef name, const std::vector<Export> &exports);
@@ -61,10 +61,10 @@ struct WrappedSymbol {
   Symbol *wrap;
 };
 
-std::vector<WrappedSymbol> addWrappedSymbols(COFFLinkerContext &ctx,
+std::vector<WrappedSymbol> addWrappedSymbols(COFFNamespace &ns,
                                              llvm::opt::InputArgList &args);
 
-void wrapSymbols(COFFLinkerContext &ctx, ArrayRef<WrappedSymbol> wrapped);
+void wrapSymbols(COFFNamespace &ns, ArrayRef<WrappedSymbol> wrapped);
 
 } // namespace lld::coff
 

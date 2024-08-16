@@ -175,7 +175,7 @@ private:
 
 static std::vector<std::vector<DefinedImportData *>>
 binImports(COFFLinkerContext &ctx,
-           const std::vector<DefinedImportData *> &imports) {
+           const std::vector<DefinedImportData *> &imports, bool mergeHybrid) {
   // Group DLL-imported symbols by DLL name because that's how
   // symbols are laid out in the import descriptor table.
   auto less = [&ctx](const std::string &a, const std::string &b) {
@@ -201,7 +201,41 @@ binImports(COFFLinkerContext &ctx,
       };
       return getBaseName(a) < getBaseName(b);
     });
-    v.push_back(std::move(syms));
+    if (!ctx.hybridNS || syms.empty()) {
+      v.push_back(std::move(syms));
+    } else if (mergeHybrid) {
+      std::vector<DefinedImportData *> hybridSyms;
+      hybridSyms.push_back(syms[0]);
+      for (size_t i = 1; i < syms.size(); ++i) {
+        ImportFile *file = syms[i]->file;
+        ImportFile *prev = hybridSyms.back()->file;
+        if (prev->hybridFile || !file->matches(prev)) {
+          hybridSyms.push_back(syms[i]);
+          continue;
+        }
+
+        if (isArm64EC(file->getMachineType())) {
+          hybridSyms.pop_back();
+          hybridSyms.push_back(syms[i]);
+        }
+
+        prev->hybridFile = file;
+        file->hybridFile = prev;
+      }
+
+      llvm::stable_sort(hybridSyms,
+                        [](DefinedImportData *a, DefinedImportData *b) {
+                          if (a->file->hybridFile)
+                            return !b->file->hybridFile && b->file->isEC();
+                          return !a->file->isEC() && b->file->isEC();
+                        });
+      v.push_back(std::move(hybridSyms));
+    } else {
+      llvm::stable_sort(syms, [](DefinedImportData *a, DefinedImportData *b) {
+        return !a->file->isEC() && b->file->isEC();
+      });
+      v.push_back(std::move(syms));
+    }
   }
   return v;
 }
@@ -636,22 +670,22 @@ public:
 
 class AddressTableChunk : public NonSectionChunk {
 public:
-  explicit AddressTableChunk(COFFLinkerContext &ctx, size_t baseOrdinal,
+  explicit AddressTableChunk(COFFNamespace &ns, size_t baseOrdinal,
                              size_t maxOrdinal)
-      : baseOrdinal(baseOrdinal), size((maxOrdinal - baseOrdinal) + 1),
-        ctx(ctx) {}
+      : baseOrdinal(baseOrdinal), size((maxOrdinal - baseOrdinal) + 1), ns(ns) {
+  }
   size_t getSize() const override { return size * 4; }
 
   void writeTo(uint8_t *buf) const override {
     memset(buf, 0, getSize());
 
-    for (const Export &e : ctx.config.exports) {
+    for (const Export &e : ns.exports) {
       assert(e.ordinal >= baseOrdinal && "Export symbol has invalid ordinal");
       // Subtract the OrdinalBase to get the index.
       uint8_t *p = buf + (e.ordinal - baseOrdinal) * 4;
       uint32_t bit = 0;
       // Pointer to thumb code must have the LSB set, so adjust it.
-      if (ctx.config.machine == ARMNT && !e.data)
+      if (ns.machine == ARMNT && !e.data)
         bit = 1;
       if (e.forwardChunk) {
         write32le(p, e.forwardChunk->getRVA() | bit);
@@ -666,7 +700,7 @@ public:
 private:
   size_t baseOrdinal;
   size_t size;
-  const COFFLinkerContext &ctx;
+  const COFFNamespace &ns;
 };
 
 class NamePointersChunk : public NonSectionChunk {
@@ -687,13 +721,13 @@ private:
 
 class ExportOrdinalChunk : public NonSectionChunk {
 public:
-  explicit ExportOrdinalChunk(const COFFLinkerContext &ctx, size_t baseOrdinal,
+  explicit ExportOrdinalChunk(const COFFNamespace &ns, size_t baseOrdinal,
                               size_t tableSize)
-      : baseOrdinal(baseOrdinal), size(tableSize), ctx(ctx) {}
+      : baseOrdinal(baseOrdinal), size(tableSize), ns(ns) {}
   size_t getSize() const override { return size * 2; }
 
   void writeTo(uint8_t *buf) const override {
-    for (const Export &e : ctx.config.exports) {
+    for (const Export &e : ns.exports) {
       if (e.noname)
         continue;
       assert(e.ordinal >= baseOrdinal && "Export symbol has invalid ordinal");
@@ -706,13 +740,14 @@ public:
 private:
   size_t baseOrdinal;
   size_t size;
-  const COFFLinkerContext &ctx;
+  const COFFNamespace &ns;
 };
 
 } // anonymous namespace
 
 void IdataContents::create(COFFLinkerContext &ctx) {
-  std::vector<std::vector<DefinedImportData *>> v = binImports(ctx, imports);
+  std::vector<std::vector<DefinedImportData *>> v =
+      binImports(ctx, imports, true);
 
   // Create .idata contents for each DLL.
   for (std::vector<DefinedImportData *> &syms : v) {
@@ -721,17 +756,45 @@ void IdataContents::create(COFFLinkerContext &ctx) {
     // If they don't (if they are import-by-ordinals), we store only
     // ordinal values to the table.
     size_t base = lookups.size();
+    Chunk *lookupsTerminator = nullptr, *addressesTerminator = nullptr;
     for (DefinedImportData *s : syms) {
       uint16_t ord = s->getOrdinal();
+      HintNameChunk *hintChunk = nullptr;
+      Chunk *lookupsChunk, *addressesChunk;
+
       if (s->getExternalName().empty()) {
-        lookups.push_back(make<OrdinalOnlyChunk>(ctx, ord));
-        addresses.push_back(make<OrdinalOnlyChunk>(ctx, ord));
+        lookupsChunk = make<OrdinalOnlyChunk>(ctx, ord);
+        addressesChunk = make<OrdinalOnlyChunk>(ctx, ord);
       } else {
-        auto *c = make<HintNameChunk>(s->getExternalName(), ord);
-        lookups.push_back(make<LookupChunk>(ctx, c));
-        addresses.push_back(make<LookupChunk>(ctx, c));
-        hints.push_back(c);
+        hintChunk = make<HintNameChunk>(s->getExternalName(), ord);
+        lookupsChunk = make<LookupChunk>(ctx, hintChunk);
+        addressesChunk = make<LookupChunk>(ctx, hintChunk);
+        hints.push_back(hintChunk);
       }
+
+      if (ctx.hybridNS && !lookupsTerminator && s->file->isEC() &&
+          !s->file->hybridFile) {
+        lookupsTerminator = lookupsChunk;
+        addressesTerminator = addressesChunk;
+        lookupsChunk = make<NullChunk>(ctx);
+        addressesChunk = make<NullChunk>(ctx);
+
+        ctx.addArm64XReloc(IMAGE_DVRT_ARM64X_FIXUP_TYPE_VALUE, nullptr,
+                           lookupsChunk, 0, nullptr, hintChunk,
+                           hintChunk ? 0 : ord, sizeof(uint64_t));
+        ctx.addArm64XReloc(IMAGE_DVRT_ARM64X_FIXUP_TYPE_VALUE, nullptr,
+                           addressesChunk, 0, nullptr, hintChunk,
+                           hintChunk ? 0 : ord, sizeof(uint64_t));
+        ctx.addArm64XReloc(IMAGE_DVRT_ARM64X_FIXUP_TYPE_ZEROFILL, nullptr,
+                           lookupsTerminator, 0, nullptr, nullptr, 0,
+                           sizeof(uint64_t));
+        ctx.addArm64XReloc(IMAGE_DVRT_ARM64X_FIXUP_TYPE_ZEROFILL, nullptr,
+                           addressesTerminator, 0, nullptr, nullptr, 0,
+                           sizeof(uint64_t));
+      }
+
+      lookups.push_back(lookupsChunk);
+      addresses.push_back(addressesChunk);
 
       if (s->file->impECSym) {
         auto chunk = make<AuxImportChunk>(s->file);
@@ -741,18 +804,26 @@ void IdataContents::create(COFFLinkerContext &ctx) {
         chunk = make<AuxImportChunk>(s->file);
         auxIatCopy.push_back(chunk);
         s->file->auxImpCopySym->setLocation(chunk);
+      } else if (ctx.config.machine == ARM64X) {
+        auxIat.push_back(make<NullChunk>(ctx));
+        auxIatCopy.push_back(make<NullChunk>(ctx));
       }
     }
     // Terminate with null values.
-    lookups.push_back(make<NullChunk>(ctx));
-    addresses.push_back(make<NullChunk>(ctx));
-    if (ctx.config.machine == ARM64EC) {
+    lookups.push_back(lookupsTerminator ? lookupsTerminator
+                                        : make<NullChunk>(ctx));
+    addresses.push_back(addressesTerminator ? addressesTerminator
+                                            : make<NullChunk>(ctx));
+    if (isArm64EC(ctx.config.machine)) {
       auxIat.push_back(make<NullChunk>(ctx));
       auxIatCopy.push_back(make<NullChunk>(ctx));
     }
 
-    for (int i = 0, e = syms.size(); i < e; ++i)
+    for (int i = 0, e = syms.size(); i < e; ++i) {
       syms[i]->setLocation(addresses[base + i]);
+      if (syms[i]->file->hybridFile)
+        syms[i]->file->hybridFile->impSym->setLocation(addresses[base + i]);
+    }
 
     // Create the import table header.
     dllNames.push_back(make<StringChunk>(syms[0]->getDLLName()));
@@ -760,6 +831,25 @@ void IdataContents::create(COFFLinkerContext &ctx) {
     dir->lookupTab = lookups[base];
     dir->addressTab = addresses[base];
     dirs.push_back(dir);
+
+    if (ctx.hybridNS) {
+      uint32_t nativeOnly = 0;
+      for (DefinedImportData *s : syms) {
+        if (s->file->isEC())
+          break;
+        ++nativeOnly;
+      }
+      if (nativeOnly) {
+        ctx.addArm64XReloc(
+            IMAGE_DVRT_ARM64X_FIXUP_TYPE_DELTA, nullptr, dir,
+            offsetof(ImportDirectoryTableEntry, ImportLookupTableRVA), nullptr,
+            nullptr, nativeOnly * sizeof(uint64_t), 0);
+        ctx.addArm64XReloc(
+            IMAGE_DVRT_ARM64X_FIXUP_TYPE_DELTA, nullptr, dir,
+            offsetof(ImportDirectoryTableEntry, ImportAddressTableRVA), nullptr,
+            nullptr, nativeOnly * sizeof(uint64_t), 0);
+      }
+    }
   }
   // Add null terminator.
   dirs.push_back(make<NullChunk>(sizeof(ImportDirectoryTableEntry), 4));
@@ -785,11 +875,11 @@ uint64_t DelayLoadContents::getDirSize() {
   return dirs.size() * sizeof(delay_import_directory_table_entry);
 }
 
-void DelayLoadContents::create(Defined *h) {
-  helper = h;
-  std::vector<std::vector<DefinedImportData *>> v = binImports(ctx, imports);
+void DelayLoadContents::create() {
+  std::vector<std::vector<DefinedImportData *>> v =
+      binImports(ctx, imports, false);
 
-  Chunk *unwind = newTailMergeUnwindInfoChunk();
+  Chunk *unwind = newTailMergeUnwindInfoChunk(ctx.primaryNS);
 
   // Create .didat contents for each DLL.
   for (std::vector<DefinedImportData *> &syms : v) {
@@ -798,54 +888,72 @@ void DelayLoadContents::create(Defined *h) {
     auto *dir = make<DelayDirectoryChunk>(dllNames.back());
 
     size_t base = addresses.size();
-    Chunk *tm = newTailMergeChunk(dir);
-    Chunk *pdataChunk = unwind ? newTailMergePDataChunk(tm, unwind) : nullptr;
-    for (DefinedImportData *s : syms) {
-      Chunk *t = newThunkChunk(s, tm);
-      auto *a = make<DelayAddressChunk>(ctx, t);
-      addresses.push_back(a);
-      thunks.push_back(t);
-      StringRef extName = s->getExternalName();
-      if (extName.empty()) {
-        names.push_back(make<OrdinalOnlyChunk>(ctx, s->getOrdinal()));
-      } else {
-        auto *c = make<HintNameChunk>(extName, 0);
-        names.push_back(make<LookupChunk>(ctx, c));
-        hintNames.push_back(c);
-        // Add a synthetic symbol for this load thunk, using the "__imp___load"
-        // prefix, in case this thunk needs to be added to the list of valid
-        // call targets for Control Flow Guard.
-        StringRef symName = saver().save("__imp___load_" + extName);
-        s->loadThunkSym =
-            cast<DefinedSynthetic>(ctx.symtab.addSynthetic(symName, t));
+    ctx.forEachNS([&](COFFNamespace &ns) {
+      Chunk *tm = newTailMergeChunk(ns, dir);
+      Chunk *pdataChunk =
+          unwind ? newTailMergePDataChunk(ns, tm, unwind) : nullptr;
+      size_t targetBase = addresses.size();
+      for (DefinedImportData *s : syms) {
+        if (s->file->isEC() != isArm64EC(ns.machine))
+          continue;
+        Chunk *t = newThunkChunk(ns, s, tm);
+        auto *a = make<DelayAddressChunk>(ns.ctx, t);
+        addresses.push_back(a);
+        s->setLocation(a);
+        thunks.push_back(t);
+        StringRef extName = s->getExternalName();
+        if (extName.empty()) {
+          names.push_back(make<OrdinalOnlyChunk>(ns.ctx, s->getOrdinal()));
+        } else {
+          auto *c = make<HintNameChunk>(extName, 0);
+          names.push_back(make<LookupChunk>(ns.ctx, c));
+          hintNames.push_back(c);
+          // Add a synthetic symbol for this load thunk, using the
+          // "__imp___load" prefix, in case this thunk needs to be added to the
+          // list of valid call nss for Control Flow Guard.
+          StringRef symName = saver().save("__imp___load_" + extName);
+          s->loadThunkSym =
+              cast<DefinedSynthetic>(ns.symtab.addSynthetic(symName, t));
+        }
+
+        if (s->file->impECSym) {
+          auto chunk = make<AuxImportChunk>(s->file);
+          auxIat.push_back(chunk);
+          s->file->impECSym->setLocation(chunk);
+
+          chunk = make<AuxImportChunk>(s->file);
+          auxIatCopy.push_back(chunk);
+          s->file->auxImpCopySym->setLocation(chunk);
+        }
       }
-
-      if (s->file->impECSym) {
-        auto chunk = make<AuxImportChunk>(s->file);
-        auxIat.push_back(chunk);
-        s->file->impECSym->setLocation(chunk);
-
-        chunk = make<AuxImportChunk>(s->file);
-        auxIatCopy.push_back(chunk);
-        s->file->auxImpCopySym->setLocation(chunk);
+      thunks.push_back(tm);
+      if (pdataChunk)
+        pdata.push_back(pdataChunk);
+      StringRef tmName =
+          saver().save("__tailMerge_" + syms[0]->getDLLName().lower());
+      ns.symtab.addSynthetic(tmName, tm);
+      // Terminate with null values.
+      addresses.push_back(make<NullChunk>(ctx, 8));
+      names.push_back(make<NullChunk>(ctx, 8));
+      if (ns.machine == ARM64EC) {
+        auxIat.push_back(make<NullChunk>(ctx, 8));
+        auxIatCopy.push_back(make<NullChunk>(ctx, 8));
+        auxIat.push_back(make<NullChunk>(ctx, 8));
+        if (ctx.hybridNS) {
+          ctx.addArm64XReloc(IMAGE_DVRT_ARM64X_FIXUP_TYPE_DELTA, nullptr, dir,
+                             offsetof(delay_import_directory_table_entry,
+                                      DelayImportAddressTable),
+                             nullptr, nullptr,
+                             (targetBase - base) * sizeof(uint64_t), 0);
+          ctx.addArm64XReloc(IMAGE_DVRT_ARM64X_FIXUP_TYPE_DELTA, nullptr, dir,
+                             offsetof(delay_import_directory_table_entry,
+                                      DelayImportNameTable),
+                             nullptr, nullptr,
+                             (targetBase - base) * sizeof(uint64_t), 0);
+        }
       }
-    }
-    thunks.push_back(tm);
-    if (pdataChunk)
-      pdata.push_back(pdataChunk);
-    StringRef tmName =
-        saver().save("__tailMerge_" + syms[0]->getDLLName().lower());
-    ctx.symtab.addSynthetic(tmName, tm);
-    // Terminate with null values.
-    addresses.push_back(make<NullChunk>(ctx, 8));
-    names.push_back(make<NullChunk>(ctx, 8));
-    if (ctx.config.machine == ARM64EC) {
-      auxIat.push_back(make<NullChunk>(ctx, 8));
-      auxIatCopy.push_back(make<NullChunk>(ctx, 8));
-    }
+    });
 
-    for (int i = 0, e = syms.size(); i < e; ++i)
-      syms[i]->setLocation(addresses[base + i]);
     auto *mh = make<NullChunk>(8, 8);
     moduleHandles.push_back(mh);
 
@@ -863,15 +971,16 @@ void DelayLoadContents::create(Defined *h) {
       make<NullChunk>(sizeof(delay_import_directory_table_entry), 4));
 }
 
-Chunk *DelayLoadContents::newTailMergeChunk(Chunk *dir) {
-  switch (ctx.config.machine) {
+Chunk *DelayLoadContents::newTailMergeChunk(COFFNamespace &ns, Chunk *dir) {
+  auto helper = cast<Defined>(ns.delayLoadHelper);
+  switch (ns.machine) {
   case AMD64:
   case ARM64EC:
     return make<TailMergeChunkX64>(dir, helper);
   case I386:
-    return make<TailMergeChunkX86>(ctx, dir, helper);
+    return make<TailMergeChunkX86>(ns.ctx, dir, helper);
   case ARMNT:
-    return make<TailMergeChunkARM>(ctx, dir, helper);
+    return make<TailMergeChunkARM>(ns.ctx, dir, helper);
   case ARM64:
     return make<TailMergeChunkARM64>(dir, helper);
   default:
@@ -879,8 +988,8 @@ Chunk *DelayLoadContents::newTailMergeChunk(Chunk *dir) {
   }
 }
 
-Chunk *DelayLoadContents::newTailMergeUnwindInfoChunk() {
-  switch (ctx.config.machine) {
+Chunk *DelayLoadContents::newTailMergeUnwindInfoChunk(COFFNamespace &ns) {
+  switch (ns.machine) {
   case AMD64:
     return make<TailMergeUnwindInfoX64>();
     // FIXME: Add support for other architectures.
@@ -888,8 +997,9 @@ Chunk *DelayLoadContents::newTailMergeUnwindInfoChunk() {
     return nullptr; // Just don't generate unwind info.
   }
 }
-Chunk *DelayLoadContents::newTailMergePDataChunk(Chunk *tm, Chunk *unwind) {
-  switch (ctx.config.machine) {
+Chunk *DelayLoadContents::newTailMergePDataChunk(COFFNamespace &ns, Chunk *tm,
+                                                 Chunk *unwind) {
+  switch (ns.machine) {
   case AMD64:
     return make<TailMergePDataChunkX64>(tm, unwind);
     // FIXME: Add support for other architectures.
@@ -898,16 +1008,16 @@ Chunk *DelayLoadContents::newTailMergePDataChunk(Chunk *tm, Chunk *unwind) {
   }
 }
 
-Chunk *DelayLoadContents::newThunkChunk(DefinedImportData *s,
+Chunk *DelayLoadContents::newThunkChunk(COFFNamespace &ns, DefinedImportData *s,
                                         Chunk *tailMerge) {
-  switch (ctx.config.machine) {
+  switch (ns.machine) {
   case AMD64:
   case ARM64EC:
     return make<ThunkChunkX64>(s, tailMerge);
   case I386:
-    return make<ThunkChunkX86>(ctx, s, tailMerge);
+    return make<ThunkChunkX86>(ns.ctx, s, tailMerge);
   case ARMNT:
-    return make<ThunkChunkARM>(ctx, s, tailMerge);
+    return make<ThunkChunkARM>(ns.ctx, s, tailMerge);
   case ARM64:
     return make<ThunkChunkARM64>(s, tailMerge);
   default:
@@ -915,9 +1025,9 @@ Chunk *DelayLoadContents::newThunkChunk(DefinedImportData *s,
   }
 }
 
-EdataContents::EdataContents(COFFLinkerContext &ctx) : ctx(ctx) {
+void EdataContents::create(COFFNamespace &ns) {
   unsigned baseOrdinal = 1 << 16, maxOrdinal = 0;
-  for (Export &e : ctx.config.exports) {
+  for (Export &e : ns.exports) {
     baseOrdinal = std::min(baseOrdinal, (unsigned)e.ordinal);
     maxOrdinal = std::max(maxOrdinal, (unsigned)e.ordinal);
   }
@@ -925,15 +1035,16 @@ EdataContents::EdataContents(COFFLinkerContext &ctx) : ctx(ctx) {
   // https://learn.microsoft.com/en-us/cpp/build/reference/export-exports-a-function?view=msvc-170
   assert(baseOrdinal >= 1);
 
-  auto *dllName = make<StringChunk>(sys::path::filename(ctx.config.outputFile));
-  auto *addressTab = make<AddressTableChunk>(ctx, baseOrdinal, maxOrdinal);
+  auto *dllName =
+      make<StringChunk>(sys::path::filename(ns.ctx.config.outputFile));
+  auto *addressTab = make<AddressTableChunk>(ns, baseOrdinal, maxOrdinal);
   std::vector<Chunk *> names;
-  for (Export &e : ctx.config.exports)
+  for (Export &e : ns.exports)
     if (!e.noname)
       names.push_back(make<StringChunk>(e.exportName));
 
   std::vector<Chunk *> forwards;
-  for (Export &e : ctx.config.exports) {
+  for (Export &e : ns.exports) {
     if (e.forwardTo.empty())
       continue;
     e.forwardChunk = make<StringChunk>(e.forwardTo);
@@ -941,7 +1052,7 @@ EdataContents::EdataContents(COFFLinkerContext &ctx) : ctx(ctx) {
   }
 
   auto *nameTab = make<NamePointersChunk>(names);
-  auto *ordinalTab = make<ExportOrdinalChunk>(ctx, baseOrdinal, names.size());
+  auto *ordinalTab = make<ExportOrdinalChunk>(ns, baseOrdinal, names.size());
   auto *dir =
       make<ExportDirectoryChunk>(baseOrdinal, maxOrdinal, names.size(), dllName,
                                  addressTab, nameTab, ordinalTab);

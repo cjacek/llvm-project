@@ -53,6 +53,8 @@ using namespace lld::coff;
 using llvm::Triple;
 using llvm::support::ulittle32_t;
 
+COFFNamespace &InputFile::getNS() const { return ctx.getNS(getMachineType()); }
+
 // Returns the last element of a path, which is supposed to be a filename.
 static StringRef getBasename(StringRef path) {
   return sys::path::filename(path, sys::path::Style::windows);
@@ -73,7 +75,7 @@ std::string lld::toString(const coff::InputFile *file) {
 /// Checks that Source is compatible with being a weak alias to Target.
 /// If Source is Undefined and has no weak alias set, makes it a weak
 /// alias to Target.
-static void checkAndSetWeakAlias(COFFLinkerContext &ctx, InputFile *f,
+static void checkAndSetWeakAlias(COFFNamespace &ns, InputFile *f,
                                  Symbol *source, Symbol *target,
                                  bool isAntiDep) {
   if (auto *u = dyn_cast<Undefined>(source)) {
@@ -87,9 +89,9 @@ static void checkAndSetWeakAlias(COFFLinkerContext &ctx, InputFile *f,
         // of another symbol emitted near the weak symbol.
         // Just use the definition from the first object file that defined
         // this weak symbol.
-        if (ctx.config.allowDuplicateWeak)
+        if (ns.ctx.config.allowDuplicateWeak)
           return;
-        ctx.symtab.reportDuplicate(source, f);
+        ns.symtab.reportDuplicate(source, f);
       }
     }
     u->setWeakAlias(target, isAntiDep);
@@ -112,8 +114,9 @@ void ArchiveFile::parse() {
     iterator_range<Archive::symbol_iterator> symbols =
         CHECK(file->ec_symbols(), this);
     if (!symbols.empty()) {
+      COFFNamespace &ns = ctx.getNS(ARM64EC);
       for (const Archive::Symbol &sym : symbols)
-        ctx.symtab.addLazyArchive(this, sym);
+        ns.symtab.addLazyArchive(this, sym);
 
       // Read both EC and native symbols on ARM64X.
       if (ctx.config.machine != ARM64X)
@@ -123,7 +126,7 @@ void ArchiveFile::parse() {
 
   // Read the symbol table to construct Lazy objects.
   for (const Archive::Symbol &sym : file->symbols())
-    ctx.symtab.addLazyArchive(this, sym);
+    ctx.primaryNS.symtab.addLazyArchive(this, sym);
 }
 
 // Returns a buffer pointing to a member file containing a given symbol.
@@ -160,6 +163,7 @@ void ObjFile::parseLazy() {
   std::unique_ptr<Binary> coffObjPtr = CHECK(createBinary(mb), this);
   COFFObjectFile *coffObj = cast<COFFObjectFile>(coffObjPtr.get());
   uint32_t numSymbols = coffObj->getNumberOfSymbols();
+  COFFNamespace &ns = ctx.getNS(MachineTypes(coffObj->getMachine()));
   for (uint32_t i = 0; i < numSymbols; ++i) {
     COFFSymbolRef coffSym = check(coffObj->getSymbol(i));
     if (coffSym.isUndefined() || !coffSym.isExternal() ||
@@ -168,7 +172,7 @@ void ObjFile::parseLazy() {
     StringRef name = check(coffObj->getSymbolName(coffSym));
     if (coffSym.isAbsolute() && ignoredSymbolName(name))
       continue;
-    ctx.symtab.addLazyObject(this, name);
+    ns.symtab.addLazyObject(this, name);
     i += coffSym.getNumberOfAuxSymbols();
   }
 }
@@ -193,10 +197,12 @@ void ObjFile::initializeECThunks() {
       auto entry = reinterpret_cast<const ECMapEntry *>(iter);
       switch (entry->type) {
       case Arm64ECThunkType::Entry:
-        ctx.symtab.addEntryThunk(getSymbol(entry->src), getSymbol(entry->dst));
+        ctx.getNS(ARM64EC).symtab.addEntryThunk(getSymbol(entry->src),
+                                                getSymbol(entry->dst));
         break;
       case Arm64ECThunkType::Exit:
-        ctx.symtab.addExitThunk(getSymbol(entry->src), getSymbol(entry->dst));
+        ctx.getNS(ARM64EC).symtab.addExitThunk(getSymbol(entry->src),
+                                               getSymbol(entry->dst));
         break;
       case Arm64ECThunkType::GuestExit:
         break;
@@ -421,8 +427,8 @@ Symbol *ObjFile::createRegular(COFFSymbolRef sym) {
   if (sym.isExternal()) {
     StringRef name = check(coffObj->getSymbolName(sym));
     if (sc)
-      return ctx.symtab.addRegular(this, name, sym.getGeneric(), sc,
-                                   sym.getValue());
+      return ctx.getNS(getMachineType())
+          .symtab.addRegular(this, name, sym.getGeneric(), sc, sym.getValue());
     // For MinGW symbols named .weak.* that point to a discarded section,
     // don't create an Undefined symbol. If nothing ever refers to the symbol,
     // everything should be fine. If something actually refers to the symbol
@@ -430,7 +436,7 @@ Symbol *ObjFile::createRegular(COFFSymbolRef sym) {
     // references at the end.
     if (ctx.config.mingw && name.starts_with(".weak."))
       return nullptr;
-    return ctx.symtab.addUndefined(name, this, false);
+    return ctx.getNS(getMachineType()).symtab.addUndefined(name, this, false);
   }
   if (sc)
     return make<DefinedRegular>(this, /*Name*/ "", /*IsCOMDAT*/ false,
@@ -450,6 +456,8 @@ void ObjFile::initializeSymbols() {
   DenseMap<StringRef, uint32_t> prevailingSectionMap;
   std::vector<const coff_aux_section_definition *> comdatDefs(
       coffObj->getNumberOfSections() + 1);
+
+  COFFNamespace &ns = ctx.getNS(getMachineType());
 
   for (uint32_t i = 0; i < numSymbols; ++i) {
     COFFSymbolRef coffSym = check(coffObj->getSymbol(i));
@@ -523,7 +531,7 @@ void ObjFile::initializeSymbols() {
   for (auto &kv : weakAliases) {
     Symbol *sym = kv.first;
     const coff_aux_weak_external *aux = kv.second;
-    checkAndSetWeakAlias(ctx, this, sym, symbols[aux->TagIndex],
+    checkAndSetWeakAlias(ns, this, sym, symbols[aux->TagIndex],
                          aux->Characteristics ==
                              IMAGE_WEAK_EXTERN_ANTI_DEPENDENCY);
   }
@@ -534,7 +542,7 @@ void ObjFile::initializeSymbols() {
 
 Symbol *ObjFile::createUndefined(COFFSymbolRef sym, bool overrideLazy) {
   StringRef name = check(coffObj->getSymbolName(sym));
-  Symbol *s = ctx.symtab.addUndefined(name, this, overrideLazy);
+  Symbol *s = getNS().symtab.addUndefined(name, this, overrideLazy);
 
   // Add an anti-dependency alias for undefined AMD64 symbols on the ARM64EC
   // target.
@@ -543,8 +551,9 @@ Symbol *ObjFile::createUndefined(COFFSymbolRef sym, bool overrideLazy) {
     if (u && !u->weakAlias) {
       if (std::optional<std::string> mangledName =
               getArm64ECMangledFunctionName(name)) {
-        Symbol *m = ctx.symtab.addUndefined(saver().save(*mangledName), this,
-                                            /*overrideLazy=*/false);
+        Symbol *m =
+            getNS().symtab.addUndefined(saver().save(*mangledName), this,
+                                        /*overrideLazy=*/false);
         u->setWeakAlias(m, /*antiDep=*/true);
       }
     }
@@ -578,6 +587,7 @@ void ObjFile::handleComdatSelection(
 
   SectionChunk *leaderChunk = leader->getChunk();
   COMDATType leaderSelection = leaderChunk->selection;
+  COFFNamespace &ns = getNS();
 
   assert(leader->data && "Comdat leader without SectionChunk?");
   if (isa<BitcodeFile>(leader->file)) {
@@ -619,13 +629,13 @@ void ObjFile::handleComdatSelection(
          Twine((int)leaderSelection) + " in " + toString(leader->getFile()) +
          " and " + Twine((int)selection) + " in " + toString(this))
             .str());
-    ctx.symtab.reportDuplicate(leader, this);
+    ns.symtab.reportDuplicate(leader, this);
     return;
   }
 
   switch (selection) {
   case IMAGE_COMDAT_SELECT_NODUPLICATES:
-    ctx.symtab.reportDuplicate(leader, this);
+    ns.symtab.reportDuplicate(leader, this);
     break;
 
   case IMAGE_COMDAT_SELECT_ANY:
@@ -635,14 +645,14 @@ void ObjFile::handleComdatSelection(
   case IMAGE_COMDAT_SELECT_SAME_SIZE:
     if (leaderChunk->getSize() != getSection(sym)->SizeOfRawData) {
       if (!ctx.config.mingw) {
-        ctx.symtab.reportDuplicate(leader, this);
+        ns.symtab.reportDuplicate(leader, this);
       } else {
         const coff_aux_section_definition *leaderDef = nullptr;
         if (leaderChunk->file)
           leaderDef = findSectionDef(leaderChunk->file->getCOFFObj(),
                                      leaderChunk->getSectionNumber());
         if (!leaderDef || leaderDef->Length != def->Length)
-          ctx.symtab.reportDuplicate(leader, this);
+          ns.symtab.reportDuplicate(leader, this);
       }
     }
     break;
@@ -653,7 +663,7 @@ void ObjFile::handleComdatSelection(
     // if the two comdat sections have e.g. different alignment.
     // Match that.
     if (leaderChunk->getContents() != newChunk.getContents())
-      ctx.symtab.reportDuplicate(leader, this, &newChunk, sym.getValue());
+      ns.symtab.reportDuplicate(leader, this, &newChunk, sym.getValue());
     break;
   }
 
@@ -692,12 +702,13 @@ std::optional<Symbol *> ObjFile::createDefined(
     bool &prevailing) {
   prevailing = false;
   auto getName = [&]() { return check(coffObj->getSymbolName(sym)); };
+  COFFNamespace &ns = getNS();
 
   if (sym.isCommon()) {
     auto *c = make<CommonChunk>(sym);
     chunks.push_back(c);
-    return ctx.symtab.addCommon(this, getName(), sym.getValue(),
-                                sym.getGeneric(), c);
+    return ns.symtab.addCommon(this, getName(), sym.getValue(),
+                               sym.getGeneric(), c);
   }
 
   if (sym.isAbsolute()) {
@@ -710,7 +721,7 @@ std::optional<Symbol *> ObjFile::createDefined(
       return nullptr;
 
     if (sym.isExternal())
-      return ctx.symtab.addAbsolute(name, sym);
+      return ns.symtab.addAbsolute(name, sym);
     return make<DefinedAbsolute>(ctx, name, sym);
   }
 
@@ -743,7 +754,7 @@ std::optional<Symbol *> ObjFile::createDefined(
 
     if (sym.isExternal()) {
       std::tie(leader, prevailing) =
-          ctx.symtab.addComdat(this, getName(), sym.getGeneric());
+          ns.symtab.addComdat(this, getName(), sym.getGeneric());
     } else {
       leader = make<DefinedRegular>(this, /*Name*/ "", /*IsCOMDAT*/ false,
                                     /*IsExternal*/ false, sym.getGeneric());
@@ -1059,6 +1070,13 @@ MachineTypes ImportFile::getMachineType() const {
   return MachineTypes(machine);
 }
 
+bool ImportFile::matches(const ImportFile *other) const {
+  if (dllName != other->dllName)
+    return false;
+  return getOrdinal() ? getOrdinal() == other->getOrdinal()
+                      : externalName == other->externalName;
+}
+
 ImportThunkChunk *ImportFile::makeImportThunk() {
   switch (hdr->Machine) {
   case AMD64:
@@ -1121,8 +1139,9 @@ void ImportFile::parse() {
 
   bool isCode = hdr->getType() == llvm::COFF::IMPORT_CODE;
 
-  if (ctx.config.machine != ARM64EC) {
-    impSym = ctx.symtab.addImportData(impName, this, location);
+  COFFNamespace &ns = getNS();
+  if (ns.machine != ARM64EC) {
+    impSym = ns.symtab.addImportData(impName, this, location);
   } else {
     // In addition to the regular IAT, ARM64EC also contains an auxiliary IAT,
     // which holds addresses that are guaranteed to be callable directly from
@@ -1131,18 +1150,18 @@ void ImportFile::parse() {
     // data imports, the naming is reversed.
     StringRef auxImpName = saver().save("__imp_aux_" + name);
     if (isCode) {
-      impSym = ctx.symtab.addImportData(auxImpName, this, location);
-      impECSym = ctx.symtab.addImportData(impName, this, auxLocation);
+      impSym = ns.symtab.addImportData(auxImpName, this, location);
+      impECSym = ns.symtab.addImportData(impName, this, auxLocation);
     } else {
-      impSym = ctx.symtab.addImportData(impName, this, location);
-      impECSym = ctx.symtab.addImportData(auxImpName, this, auxLocation);
+      impSym = ns.symtab.addImportData(impName, this, location);
+      impECSym = ns.symtab.addImportData(auxImpName, this, auxLocation);
     }
     if (!impECSym)
       return;
 
     StringRef auxImpCopyName = saver().save("__auximpcopy_" + name);
     auxImpCopySym =
-        ctx.symtab.addImportData(auxImpCopyName, this, auxCopyLocation);
+        ns.symtab.addImportData(auxImpCopyName, this, auxCopyLocation);
     if (!auxImpCopySym)
       return;
   }
@@ -1152,22 +1171,22 @@ void ImportFile::parse() {
     return;
 
   if (hdr->getType() == llvm::COFF::IMPORT_CONST)
-    static_cast<void>(ctx.symtab.addImportData(name, this, location));
+    static_cast<void>(ns.symtab.addImportData(name, this, location));
 
   // If type is function, we need to create a thunk which jump to an
   // address pointed by the __imp_ symbol. (This allows you to call
   // DLL functions just like regular non-DLL functions.)
   if (isCode) {
-    if (ctx.config.machine != ARM64EC) {
-      thunkSym = ctx.symtab.addImportThunk(name, impSym, makeImportThunk());
+    if (ns.machine != ARM64EC) {
+      thunkSym = ns.symtab.addImportThunk(name, impSym, makeImportThunk());
     } else {
-      thunkSym = ctx.symtab.addImportThunk(
+      thunkSym = ns.symtab.addImportThunk(
           name, impSym, make<ImportThunkChunkX64>(ctx, impSym));
 
       if (std::optional<std::string> mangledName =
               getArm64ECMangledFunctionName(name)) {
         StringRef auxThunkName = saver().save(*mangledName);
-        auxThunkSym = ctx.symtab.addImportThunk(
+        auxThunkSym = ns.symtab.addImportThunk(
             auxThunkName, impECSym,
             make<ImportThunkChunkARM64>(ctx, impECSym, ARM64EC));
       }
@@ -1175,7 +1194,7 @@ void ImportFile::parse() {
       StringRef impChkName = saver().save("__impchk_" + name);
       impchkThunk = make<ImportThunkChunkARM64EC>(this);
       impchkThunk->sym =
-          ctx.symtab.addImportThunk(impChkName, impSym, impchkThunk);
+          ns.symtab.addImportThunk(impChkName, impSym, impchkThunk);
       ctx.driver.pullArm64ECIcallHelper();
     }
   }
@@ -1212,11 +1231,13 @@ BitcodeFile::~BitcodeFile() = default;
 void BitcodeFile::parse() {
   llvm::StringSaver &saver = lld::saver();
 
+  COFFNamespace &ns = getNS();
+
   std::vector<std::pair<Symbol *, bool>> comdat(obj->getComdatTable().size());
   for (size_t i = 0; i != obj->getComdatTable().size(); ++i)
     // FIXME: Check nodeduplicate
     comdat[i] =
-        ctx.symtab.addComdat(this, saver.save(obj->getComdatTable()[i].first));
+        ns.symtab.addComdat(this, saver.save(obj->getComdatTable()[i].first));
   for (const lto::InputFile::Symbol &objSym : obj->symbols()) {
     StringRef symName = saver.save(objSym.getName());
     int comdatIndex = objSym.getComdatIndex();
@@ -1227,7 +1248,7 @@ void BitcodeFile::parse() {
     else
       fakeSC = &ctx.ltoDataSectionChunk.chunk;
     if (objSym.isUndefined()) {
-      sym = ctx.symtab.addUndefined(symName, this, false);
+      sym = ns.symtab.addUndefined(symName, this, false);
       if (objSym.isWeak())
         sym->deferUndefined = true;
       // If one LTO object file references (i.e. has an undefined reference to)
@@ -1244,26 +1265,26 @@ void BitcodeFile::parse() {
       if (symName.starts_with("__imp_"))
         sym->isUsedInRegularObj = true;
     } else if (objSym.isCommon()) {
-      sym = ctx.symtab.addCommon(this, symName, objSym.getCommonSize());
+      sym = ns.symtab.addCommon(this, symName, objSym.getCommonSize());
     } else if (objSym.isWeak() && objSym.isIndirect()) {
       // Weak external.
-      sym = ctx.symtab.addUndefined(symName, this, true);
+      sym = ns.symtab.addUndefined(symName, this, true);
       std::string fallback = std::string(objSym.getCOFFWeakExternalFallback());
-      Symbol *alias = ctx.symtab.addUndefined(saver.save(fallback));
-      checkAndSetWeakAlias(ctx, this, sym, alias, false);
+      Symbol *alias = ns.symtab.addUndefined(saver.save(fallback));
+      checkAndSetWeakAlias(ns, this, sym, alias, false);
     } else if (comdatIndex != -1) {
       if (symName == obj->getComdatTable()[comdatIndex].first) {
         sym = comdat[comdatIndex].first;
         if (cast<DefinedRegular>(sym)->data == nullptr)
           cast<DefinedRegular>(sym)->data = &fakeSC->repl;
       } else if (comdat[comdatIndex].second) {
-        sym = ctx.symtab.addRegular(this, symName, nullptr, fakeSC);
+        sym = ns.symtab.addRegular(this, symName, nullptr, fakeSC);
       } else {
-        sym = ctx.symtab.addUndefined(symName, this, false);
+        sym = ns.symtab.addUndefined(symName, this, false);
       }
     } else {
-      sym = ctx.symtab.addRegular(this, symName, nullptr, fakeSC, 0,
-                                  objSym.isWeak());
+      sym = ns.symtab.addRegular(this, symName, nullptr, fakeSC, 0,
+                                 objSym.isWeak());
     }
     symbols.push_back(sym);
     if (objSym.isUsed())
@@ -1273,9 +1294,10 @@ void BitcodeFile::parse() {
 }
 
 void BitcodeFile::parseLazy() {
+  COFFNamespace &ns = getNS();
   for (const lto::InputFile::Symbol &sym : obj->symbols())
     if (!sym.isUndefined())
-      ctx.symtab.addLazyObject(this, sym.getName());
+      ns.symtab.addLazyObject(this, sym.getName());
 }
 
 MachineTypes BitcodeFile::getMachineType() const {
@@ -1330,6 +1352,8 @@ void DLLFile::parse() {
     return;
   }
 
+  COFFNamespace &ns = getNS();
+
   for (const auto &exp : coffObj->export_directories()) {
     StringRef dllName, symbolName;
     uint32_t exportRVA;
@@ -1354,9 +1378,9 @@ void DLLFile::parse() {
     }
 
     StringRef impName = saver().save("__imp_" + symbolName);
-    ctx.symtab.addLazyDLLSymbol(this, s, impName);
+    ns.symtab.addLazyDLLSymbol(this, s, impName);
     if (code)
-      ctx.symtab.addLazyDLLSymbol(this, s, symbolName);
+      ns.symtab.addLazyDLLSymbol(this, s, symbolName);
   }
 }
 
@@ -1389,5 +1413,5 @@ void DLLFile::makeImport(DLLFile::Symbol *s) {
   memcpy(p, s->dllName.data(), s->dllName.size());
   MemoryBufferRef mbref = MemoryBufferRef(StringRef(buf, size), s->dllName);
   ImportFile *impFile = make<ImportFile>(ctx, mbref);
-  ctx.symtab.addFile(impFile);
+  ctx.addFile(impFile);
 }
