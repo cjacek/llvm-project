@@ -31,6 +31,7 @@ using llvm::object::coff_symbol_generic;
 
 class ArchiveFile;
 class COFFLinkerContext;
+class COFFTargetContext;
 class InputFile;
 class ObjFile;
 class SymbolTable;
@@ -377,7 +378,7 @@ public:
 
   StringRef getDLLName() { return file->dllName; }
   StringRef getExternalName() { return file->externalName; }
-  uint16_t getOrdinal() { return file->hdr->OrdinalHint; }
+  uint16_t getOrdinal() const { return file->getOrdinal(); }
 
   ImportFile *file;
   Chunk *&location;
