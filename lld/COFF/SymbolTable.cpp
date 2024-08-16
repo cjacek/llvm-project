@@ -35,56 +35,6 @@ StringRef ltrim1(StringRef s, const char *chars) {
   return s;
 }
 
-static bool compatibleMachineType(COFFLinkerContext &ctx, MachineTypes mt) {
-  if (mt == IMAGE_FILE_MACHINE_UNKNOWN)
-    return true;
-  switch (ctx.config.machine) {
-  case ARM64:
-    return mt == ARM64 || mt == ARM64X;
-  case ARM64EC:
-    return COFF::isArm64EC(mt) || mt == AMD64;
-  case ARM64X:
-    return COFF::isAnyArm64(mt) || mt == AMD64;
-  default:
-    return ctx.config.machine == mt;
-  }
-}
-
-void SymbolTable::addFile(InputFile *file) {
-  log("Reading " + toString(file));
-  if (file->lazy) {
-    if (auto *f = dyn_cast<BitcodeFile>(file))
-      f->parseLazy();
-    else
-      cast<ObjFile>(file)->parseLazy();
-  } else {
-    file->parse();
-    if (auto *f = dyn_cast<ObjFile>(file)) {
-      ctx.objFileInstances.push_back(f);
-    } else if (auto *f = dyn_cast<BitcodeFile>(file)) {
-      if (ltoCompilationDone) {
-        error("LTO object file " + toString(file) + " linked in after "
-              "doing LTO compilation.");
-      }
-      ctx.bitcodeFileInstances.push_back(f);
-    } else if (auto *f = dyn_cast<ImportFile>(file)) {
-      ctx.importFileInstances.push_back(f);
-    }
-  }
-
-  MachineTypes mt = file->getMachineType();
-  if (ctx.config.machine == IMAGE_FILE_MACHINE_UNKNOWN) {
-    ctx.config.machine = mt;
-    ctx.driver.addWinSysRootLibSearchPaths();
-  } else if (!compatibleMachineType(ctx, mt)) {
-    error(toString(file) + ": machine type " + machineToStr(mt) +
-          " conflicts with " + machineToStr(ctx.config.machine));
-    return;
-  }
-
-  ctx.driver.parseDirectives(file);
-}
-
 static void errorOrWarn(const Twine &s, bool forceUnresolved) {
   if (forceUnresolved)
     warn(s);
@@ -103,7 +53,7 @@ static void forceLazy(Symbol *s) {
   }
   case Symbol::Kind::LazyObjectKind: {
     InputFile *file = cast<LazyObject>(s)->file;
-    file->ctx.symtab.addFile(file);
+    file->ctx.addFile(file);
     break;
   }
   case Symbol::Kind::LazyDLLSymbolKind: {
@@ -290,7 +240,7 @@ void SymbolTable::loadMinGWSymbols() {
 
     StringRef name = undef->getName();
 
-    if (ctx.config.machine == I386 && ctx.config.stdcallFixup) {
+    if (target.machine == I386 && target.ctx.config.stdcallFixup) {
       // Check if we can resolve an undefined decorated symbol by finding
       // the intended target as an undecorated symbol (only with a leading
       // underscore).
@@ -311,7 +261,7 @@ void SymbolTable::loadMinGWSymbols() {
         }
         // If it's lazy or already defined, hook it up as weak alias.
         if (l->isLazy() || isa<Defined>(l)) {
-          if (ctx.config.warnStdcallFixup)
+          if (target.ctx.config.warnStdcallFixup)
             warn("Resolving " + origName + " by linking to " + newName);
           else
             log("Resolving " + origName + " by linking to " + newName);
@@ -321,7 +271,7 @@ void SymbolTable::loadMinGWSymbols() {
       }
     }
 
-    if (ctx.config.autoImport) {
+    if (target.ctx.config.autoImport) {
       if (name.starts_with("__imp_"))
         continue;
       // If we have an undefined symbol, but we have a lazy symbol we could
@@ -379,7 +329,7 @@ bool SymbolTable::handleMinGWAutomaticImport(Symbol *sym, StringRef name) {
   // for __imp_<name> instead, and drop the whole .refptr.<name> chunk.
   DefinedRegular *refptr =
       dyn_cast_or_null<DefinedRegular>(find((".refptr." + name).str()));
-  if (refptr && refptr->getChunk()->getSize() == ctx.config.wordsize) {
+  if (refptr && refptr->getChunk()->getSize() == target.ctx.config.wordsize) {
     SectionChunk *sc = dyn_cast_or_null<SectionChunk>(refptr->getChunk());
     if (sc && sc->getRelocs().size() == 1 && *sc->symbols().begin() == sym) {
       log("Replacing .refptr." + name + " with " + imp->getName());
@@ -470,12 +420,12 @@ void SymbolTable::reportUnresolvable() {
     }
     if (name.contains("_PchSym_"))
       continue;
-    if (ctx.config.autoImport && impSymbol(name))
+    if (target.ctx.config.autoImport && impSymbol(name))
       continue;
     undefs.insert(sym);
   }
 
-  reportProblemSymbols(ctx, undefs,
+  reportProblemSymbols(target.ctx, undefs,
                        /* localImports */ nullptr, true);
 }
 
@@ -502,17 +452,17 @@ void SymbolTable::resolveRemainingUndefines() {
     // This odd rule is for compatibility with MSVC linker.
     if (name.starts_with("__imp_")) {
       StringRef impName = name.substr(strlen("__imp_"));
-      if (isArm64EC(ctx.config.machine))
+      if (target.machine == ARM64EC)
         impName.consume_front("aux_");
       Symbol *imp = find(impName);
-      if (isArm64EC(ctx.config.machine) && (!imp || !isa<Defined>(imp))) {
+      if (target.machine == ARM64EC && (!imp || !isa<Defined>(imp))) {
         if (std::optional<std::string> MangledName =
                 getArm64ECMangledFunctionName(impName))
           imp = find(*MangledName);
       }
       if (imp && isa<Defined>(imp)) {
         auto *d = cast<Defined>(imp);
-        replaceSymbol<DefinedLocalImport>(sym, ctx, name, d);
+        replaceSymbol<DefinedLocalImport>(sym, target.ctx, name, d);
         localImportChunks.push_back(cast<DefinedLocalImport>(sym)->getChunk());
         localImports[sym] = d;
         continue;
@@ -524,19 +474,20 @@ void SymbolTable::resolveRemainingUndefines() {
     if (name.contains("_PchSym_"))
       continue;
 
-    if (ctx.config.autoImport && handleMinGWAutomaticImport(sym, name))
+    if (target.ctx.config.autoImport && handleMinGWAutomaticImport(sym, name))
       continue;
 
     // Remaining undefined symbols are not fatal if /force is specified.
     // They are replaced with dummy defined symbols.
-    if (ctx.config.forceUnresolved)
-      replaceSymbol<DefinedAbsolute>(sym, ctx, name, 0);
+    if (target.ctx.config.forceUnresolved)
+      replaceSymbol<DefinedAbsolute>(sym, target.ctx, name, 0);
     undefs.insert(sym);
   }
 
   reportProblemSymbols(
-      ctx, undefs,
-      ctx.config.warnLocallyDefinedImported ? &localImports : nullptr, false);
+      target.ctx, undefs,
+      target.ctx.config.warnLocallyDefinedImported ? &localImports : nullptr,
+      false);
 }
 
 std::pair<Symbol *, bool> SymbolTable::insert(StringRef name) {
@@ -549,7 +500,7 @@ std::pair<Symbol *, bool> SymbolTable::insert(StringRef name) {
     sym->canInline = true;
     inserted = true;
 
-    if (isArm64EC(ctx.config.machine) && name.starts_with("EXP+"))
+    if (isArm64EC(target.machine) && name.starts_with("EXP+"))
       expSymbols.push_back(sym);
   }
   return {sym, inserted};
@@ -587,7 +538,7 @@ void SymbolTable::initializeECThunks() {
     from->getChunk()->setEntryThunk(to);
   }
 
-  for (ImportFile *file : ctx.importFileInstances) {
+  for (ImportFile *file : target.ctx.importFileInstances) {
     if (!file->impchkThunk)
       continue;
 
@@ -640,7 +591,7 @@ void SymbolTable::addLazyObject(InputFile *f, StringRef n) {
     return;
   s->pendingArchiveLoad = true;
   f->lazy = false;
-  addFile(f);
+  target.ctx.addFile(f);
 }
 
 void SymbolTable::addLazyDLLSymbol(DLLFile *f, DLLFile::Symbol *sym,
@@ -706,7 +657,7 @@ void SymbolTable::reportDuplicate(Symbol *existing, InputFile *newFile,
                                   uint32_t newSectionOffset) {
   std::string msg;
   llvm::raw_string_ostream os(msg);
-  os << "duplicate symbol: " << toString(ctx, *existing);
+  os << "duplicate symbol: " << toString(target.ctx, *existing);
 
   DefinedRegular *d = dyn_cast<DefinedRegular>(existing);
   if (d && isa<ObjFile>(d->getFile())) {
@@ -718,7 +669,7 @@ void SymbolTable::reportDuplicate(Symbol *existing, InputFile *newFile,
   os << getSourceLocation(newFile, newSc, newSectionOffset,
                           existing->getName());
 
-  if (ctx.config.forceMultiple)
+  if (target.ctx.config.forceMultiple)
     warn(os.str());
   else
     error(os.str());
@@ -728,7 +679,7 @@ Symbol *SymbolTable::addAbsolute(StringRef n, COFFSymbolRef sym) {
   auto [s, wasInserted] = insert(n, nullptr);
   s->isUsedInRegularObj = true;
   if (wasInserted || isa<Undefined>(s) || s->isLazy())
-    replaceSymbol<DefinedAbsolute>(s, ctx, n, sym);
+    replaceSymbol<DefinedAbsolute>(s, target.ctx, n, sym);
   else if (auto *da = dyn_cast<DefinedAbsolute>(s)) {
     if (da->getVA() != sym.getValue())
       reportDuplicate(s, nullptr);
@@ -741,7 +692,7 @@ Symbol *SymbolTable::addAbsolute(StringRef n, uint64_t va) {
   auto [s, wasInserted] = insert(n, nullptr);
   s->isUsedInRegularObj = true;
   if (wasInserted || isa<Undefined>(s) || s->isLazy())
-    replaceSymbol<DefinedAbsolute>(s, ctx, n, va);
+    replaceSymbol<DefinedAbsolute>(s, target.ctx, n, va);
   else if (auto *da = dyn_cast<DefinedAbsolute>(s)) {
     if (da->getVA() != va)
       reportDuplicate(s, nullptr);
@@ -816,7 +767,7 @@ Symbol *SymbolTable::addImportThunk(StringRef name, DefinedImportData *id,
   auto [s, wasInserted] = insert(name, nullptr);
   s->isUsedInRegularObj = true;
   if (wasInserted || isa<Undefined>(s) || s->isLazy()) {
-    replaceSymbol<DefinedImportThunk>(s, ctx, name, id, chunk);
+    replaceSymbol<DefinedImportThunk>(s, target.ctx, name, id, chunk);
     return s;
   }
 
@@ -839,21 +790,12 @@ void SymbolTable::addLibcall(StringRef name) {
   }
 }
 
-std::vector<Chunk *> SymbolTable::getChunks() const {
-  std::vector<Chunk *> res;
-  for (ObjFile *file : ctx.objFileInstances) {
-    ArrayRef<Chunk *> v = file->getChunks();
-    res.insert(res.end(), v.begin(), v.end());
-  }
-  return res;
-}
-
 Symbol *SymbolTable::find(StringRef name) const {
   return symMap.lookup(CachedHashStringRef(name));
 }
 
 Symbol *SymbolTable::findUnderscore(StringRef name) const {
-  if (ctx.config.machine == I386)
+  if (target.machine == I386)
     return find(("_" + name).str());
   return find(name);
 }
@@ -900,7 +842,7 @@ Symbol *SymbolTable::findMangle(StringRef name) {
   };
 
   // For non-x86, just look for C++ functions.
-  if (ctx.config.machine != I386)
+  if (target.machine != I386)
     return findByPrefix("?" + name + "@@Y");
 
   if (!name.starts_with("_"))
@@ -923,19 +865,18 @@ Symbol *SymbolTable::addUndefined(StringRef name) {
 }
 
 void SymbolTable::compileBitcodeFiles() {
-  ltoCompilationDone = true;
-  if (ctx.bitcodeFileInstances.empty())
+  if (target.ctx.bitcodeFileInstances.empty())
     return;
 
   llvm::TimeTraceScope timeScope("Compile bitcode");
-  ScopedTimer t(ctx.ltoTimer);
-  lto.reset(new BitcodeCompiler(ctx));
-  for (BitcodeFile *f : ctx.bitcodeFileInstances)
+  ScopedTimer t(target.ctx.ltoTimer);
+  lto.reset(new BitcodeCompiler(target.ctx));
+  for (BitcodeFile *f : target.ctx.bitcodeFileInstances)
     lto->add(*f);
   for (InputFile *newObj : lto->compile()) {
     ObjFile *obj = cast<ObjFile>(newObj);
     obj->parse();
-    ctx.objFileInstances.push_back(obj);
+    target.ctx.objFileInstances.push_back(obj);
   }
 }
 

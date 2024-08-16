@@ -25,6 +25,7 @@
 
 using namespace llvm;
 using namespace llvm::object;
+using namespace llvm::support;
 using namespace llvm::support::endian;
 using namespace llvm::COFF;
 using llvm::support::ulittle32_t;
@@ -1093,7 +1094,10 @@ void CHPECodeRangesChunk::writeTo(uint8_t *buf) const {
 }
 
 size_t CHPERedirectionChunk::getSize() const {
-  return exportThunks.size() * sizeof(chpe_redirection_entry);
+  if (!exportThunks.size())
+    return 0;
+  return exportThunks.size() * sizeof(chpe_redirection_entry) +
+         8 /* +8 as a test to match native */;
 }
 
 void CHPERedirectionChunk::writeTo(uint8_t *buf) const {
@@ -1150,6 +1154,163 @@ uint32_t ImportThunkChunkARM64EC::verifyRanges(bool fixup) {
     return 0;
   extend = fixup;
   return sizeof(arm64Thunk) - sizeof(uint32_t);
+}
+
+uint32_t Arm64XDynamicRelocEntry::getRVA() const {
+  return (offsetSym ? offsetSym->getRVA() : 0) +
+         (offsetChunk ? offsetChunk->getRVA() : 0) + offset;
+}
+
+size_t Arm64XDynamicRelocEntry::getSize() const {
+  switch (type) {
+  case IMAGE_DVRT_ARM64X_FIXUP_TYPE_ZEROFILL:
+    return sizeof(uint16_t);
+  case IMAGE_DVRT_ARM64X_FIXUP_TYPE_VALUE:
+    return sizeof(uint16_t) + size;
+  case IMAGE_DVRT_ARM64X_FIXUP_TYPE_DELTA:
+    return 2 * sizeof(uint16_t);
+  }
+}
+
+uint64_t Arm64XDynamicRelocEntry::getValue() const {
+  return (sym ? sym->getRVA() : 0) + (chunk ? chunk->getRVA() : 0) + value;
+}
+
+void Arm64XDynamicRelocEntry::writeTo(uint8_t *buf) const {
+  uint64_t value = getValue();
+  uint16_t h = (getRVA() & 0xfff) | (type << 12);
+
+  switch (type) {
+  case IMAGE_DVRT_ARM64X_FIXUP_TYPE_ZEROFILL:
+  case IMAGE_DVRT_ARM64X_FIXUP_TYPE_VALUE:
+    switch (size) {
+    case 2:
+      h |= 1 << 14;
+      break;
+    case 4:
+      h |= 2 << 14;
+      break;
+    case 8:
+      h |= 3 << 14;
+      break;
+    default:
+      llvm_unreachable("invalid size");
+    }
+    break;
+  case IMAGE_DVRT_ARM64X_FIXUP_TYPE_DELTA:
+    if (static_cast<int>(value) < 0) {
+      h |= 1 << 14;
+      value = -static_cast<int>(value);
+    }
+    if (value & 7) {
+      assert(!(value & 3));
+      value >>= 2;
+    } else {
+      h |= 1 << 15;
+      value >>= 3;
+    }
+    break;
+  }
+
+  auto out = reinterpret_cast<ulittle16_t *>(buf);
+  *out = h;
+
+  switch (type) {
+  case IMAGE_DVRT_ARM64X_FIXUP_TYPE_ZEROFILL:
+    break;
+  case IMAGE_DVRT_ARM64X_FIXUP_TYPE_VALUE:
+    switch (size) {
+    case 2:
+      out[1] = value;
+      break;
+    case 4:
+      *reinterpret_cast<ulittle32_t *>(out + 1) = value;
+      break;
+    case 8:
+      *reinterpret_cast<ulittle64_t *>(out + 1) = value;
+      break;
+    }
+    break;
+  case IMAGE_DVRT_ARM64X_FIXUP_TYPE_DELTA:
+    out[1] = value;
+    break;
+  }
+}
+
+DynamicRelocsChunk::DynamicRelocsChunk(
+    std::vector<Arm64XDynamicRelocEntry> &arm64xRelocs)
+    : arm64xRelocs(arm64xRelocs) {
+
+  llvm::stable_sort(arm64xRelocs, [=](const Arm64XDynamicRelocEntry &a,
+                                      const Arm64XDynamicRelocEntry &b) {
+    if (a.offsetSym)
+      return a.offsetSym < b.offsetSym;
+    if (b.offsetSym)
+      return true;
+    return a.getRVA() < b.getRVA();
+  });
+
+  uint32_t prevPage = ~0;
+  for (const Arm64XDynamicRelocEntry &entry : arm64xRelocs) {
+    uint32_t page = entry.getRVA() & ~0xfff;
+    if (entry.offsetSym || entry.offsetChunk) {
+      arm64xRelocsSize +=
+          sizeof(coff_base_reloc_block_header) + sizeof(uint16_t);
+    } else if (page != prevPage) {
+      arm64xRelocsSize +=
+          sizeof(coff_base_reloc_block_header) + sizeof(uint16_t);
+      prevPage = page;
+    }
+    arm64xRelocsSize += entry.getSize();
+  }
+}
+
+size_t DynamicRelocsChunk::getSize() const {
+  return alignTo(sizeof(llvm::object::coff_dynamic_reloc_table),
+                 sizeof(uint64_t)) +
+         sizeof(coff_dynamic_relocation64) + arm64xRelocsSize;
+}
+
+void DynamicRelocsChunk::writeTo(uint8_t *buf) const {
+  llvm::stable_sort(arm64xRelocs, [=](const Arm64XDynamicRelocEntry &a,
+                                      const Arm64XDynamicRelocEntry &b) {
+    return a.getRVA() < b.getRVA();
+  });
+
+  auto table = reinterpret_cast<coff_dynamic_reloc_table *>(buf);
+  table->Version = 1;
+  table->Size = sizeof(coff_dynamic_relocation64);
+  buf += sizeof(*table);
+
+  auto header = reinterpret_cast<coff_dynamic_relocation64 *>(buf);
+  header->Symbol = IMAGE_DYNAMIC_RELOCATION_ARM64X;
+  buf += sizeof(*header);
+
+  auto pageHeader = reinterpret_cast<coff_base_reloc_block_header *>(buf);
+  pageHeader->BlockSize = sizeof(*pageHeader);
+  size_t relocSize = sizeof(*pageHeader);
+  for (const Arm64XDynamicRelocEntry &entry : arm64xRelocs) {
+    uint32_t page = entry.getRVA() & ~0xfff;
+    if (page != pageHeader->PageRVA) {
+      pageHeader->BlockSize = alignTo(pageHeader->BlockSize, sizeof(uint32_t));
+      relocSize = alignTo(relocSize, sizeof(uint32_t));
+      pageHeader =
+          reinterpret_cast<coff_base_reloc_block_header *>(buf + relocSize);
+      pageHeader->PageRVA = page;
+      pageHeader->BlockSize = sizeof(*pageHeader);
+      relocSize += sizeof(*pageHeader);
+    }
+
+    entry.writeTo(buf + relocSize);
+    size_t entrySize = entry.getSize();
+    pageHeader->BlockSize += entrySize;
+    relocSize += entrySize;
+  }
+  pageHeader->BlockSize = alignTo(pageHeader->BlockSize, sizeof(uint32_t));
+  relocSize = alignTo(relocSize, sizeof(uint32_t));
+
+  header->BaseRelocSize = relocSize;
+  table->Size += relocSize;
 }
 
 } // namespace lld::coff

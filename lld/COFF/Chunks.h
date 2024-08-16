@@ -913,6 +913,43 @@ public:
   SectionChunk chunk;
 };
 
+class Arm64XDynamicRelocEntry {
+public:
+  Arm64XDynamicRelocEntry(llvm::COFF::Arm64XFixupType type, Defined *offsetSym,
+                          Chunk *offsetChunk, uint16_t offset, Defined *sym,
+                          Chunk *chunk, uint64_t value, uint8_t size)
+      : offsetSym(offsetSym), offsetChunk(offsetChunk), type(type),
+        offset(offset), sym(sym), chunk(chunk), value(value), size(size) {}
+
+  size_t getSize() const;
+  void writeTo(uint8_t *buf) const;
+  uint32_t getRVA() const;
+  uint64_t getValue() const;
+  void setValue(uint64_t v) { value = v; }
+
+  Defined *offsetSym;
+  Chunk *offsetChunk;
+
+private:
+  llvm::COFF::Arm64XFixupType type;
+  uint16_t offset;
+  Defined *sym;
+  Chunk *chunk;
+  uint64_t value;
+  uint8_t size;
+};
+
+class DynamicRelocsChunk : public NonSectionChunk {
+public:
+  DynamicRelocsChunk(std::vector<Arm64XDynamicRelocEntry> &arm64xRelocs);
+  size_t getSize() const override;
+  void writeTo(uint8_t *buf) const override;
+
+private:
+  std::vector<Arm64XDynamicRelocEntry> &arm64xRelocs;
+  size_t arm64xRelocsSize = 0;
+};
+
 } // namespace lld::coff
 
 namespace llvm {
