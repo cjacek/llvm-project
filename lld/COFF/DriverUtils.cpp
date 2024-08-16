@@ -669,18 +669,18 @@ static StringRef exportSourceName(ExportSource s) {
 
 // Performs error checking on all /export arguments.
 // It also sets ordinals.
-void LinkerDriver::fixupExports() {
+void LinkerDriver::fixupExports(COFFTargetContext &target) {
   llvm::TimeTraceScope timeScope("Fixup exports");
   // Symbol ordinals must be unique.
   std::set<uint16_t> ords;
-  for (Export &e : ctx.config.exports) {
+  for (Export &e : target.exports) {
     if (e.ordinal == 0)
       continue;
     if (!ords.insert(e.ordinal).second)
       fatal("duplicate export ordinal: " + e.name);
   }
 
-  for (Export &e : ctx.config.exports) {
+  for (Export &e : target.exports) {
     if (!e.exportAs.empty()) {
       e.exportName = e.exportAs;
       continue;
@@ -709,7 +709,7 @@ void LinkerDriver::fixupExports() {
   }
 
   if (ctx.config.killAt && ctx.config.machine == I386) {
-    for (Export &e : ctx.config.exports) {
+    for (Export &e : target.exports) {
       e.name = killAt(e.name, true);
       e.exportName = killAt(e.exportName, false);
       e.extName = killAt(e.extName, true);
@@ -718,10 +718,9 @@ void LinkerDriver::fixupExports() {
   }
 
   // Uniquefy by name.
-  DenseMap<StringRef, std::pair<Export *, unsigned>> map(
-      ctx.config.exports.size());
+  DenseMap<StringRef, std::pair<Export *, unsigned>> map(target.exports.size());
   std::vector<Export> v;
-  for (Export &e : ctx.config.exports) {
+  for (Export &e : target.exports) {
     auto pair = map.insert(std::make_pair(e.exportName, std::make_pair(&e, 0)));
     bool inserted = pair.second;
     if (inserted) {
@@ -749,20 +748,20 @@ void LinkerDriver::fixupExports() {
                  Twine(", now in " + exportSourceName(e.source))));
     }
   }
-  ctx.config.exports = std::move(v);
+  target.exports = std::move(v);
 
   // Sort by name.
-  llvm::sort(ctx.config.exports, [](const Export &a, const Export &b) {
+  llvm::sort(target.exports, [](const Export &a, const Export &b) {
     return a.exportName < b.exportName;
   });
 }
 
-void LinkerDriver::assignExportOrdinals() {
+void LinkerDriver::assignExportOrdinals(COFFTargetContext &target) {
   // Assign unique ordinals if default (= 0).
   uint32_t max = 0;
-  for (Export &e : ctx.config.exports)
+  for (Export &e : target.exports)
     max = std::max(max, (uint32_t)e.ordinal);
-  for (Export &e : ctx.config.exports)
+  for (Export &e : target.exports)
     if (e.ordinal == 0)
       e.ordinal = ++max;
   if (max > std::numeric_limits<uint16_t>::max())
