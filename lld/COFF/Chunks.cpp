@@ -422,6 +422,13 @@ void SectionChunk::applyRelocation(uint8_t *off,
                                    const coff_relocation &rel) const {
   auto *sym = dyn_cast_or_null<Defined>(file->getSymbol(rel.SymbolTableIndex));
 
+  if (sym && getMachine() == AMD64 && isArm64EC(file->ctx.config.machine)) {
+    if (auto impSym = dyn_cast<DefinedImportData>(sym)) {
+      if (impSym->file->impchkThunk && sym == impSym->file->impECSym)
+        sym = impSym->file->impSym;
+    }
+  }
+
   // Get the output section of the symbol for this relocation.  The output
   // section is needed to compute SECREL and SECTION relocations used in debug
   // info.
