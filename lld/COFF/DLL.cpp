@@ -142,6 +142,28 @@ private:
   size_t size;
 };
 
+class ECImportChunk : public NonSectionChunk {
+public:
+  explicit ECImportChunk(ImportFile *file) : file(file) {
+    setAlignment(sizeof(uint64_t));
+  }
+  size_t getSize() const override { return sizeof(uint64_t); }
+
+  void writeTo(uint8_t *buf) const override {
+    write64le(buf, file->impchkThunk
+                       ? file->impchkThunk->getRVA() + file->ctx.config.imageBase
+                       : 0);
+  }
+
+  void getBaserels(std::vector<Baserel> *res) override {
+    if (file->impchkThunk)
+      res->emplace_back(rva, file->ctx.config.machine);
+  }
+
+private:
+  ImportFile *file;
+};
+
 static std::vector<std::vector<DefinedImportData *>>
 binImports(COFFLinkerContext &ctx,
            const std::vector<DefinedImportData *> &imports) {
@@ -160,7 +182,12 @@ binImports(COFFLinkerContext &ctx,
     // Sort symbols by name for each group.
     std::vector<DefinedImportData *> &syms = kv.second;
     llvm::sort(syms, [](DefinedImportData *a, DefinedImportData *b) {
-      return a->getName() < b->getName();
+      auto getBaseName = [](StringRef name) {
+        name.consume_front("__imp_");
+        name.consume_front("aux_");
+        return name;
+      };
+      return getBaseName(a->getName()) < getBaseName(b->getName());
     });
     v.push_back(std::move(syms));
   }
@@ -687,16 +714,24 @@ void IdataContents::create(COFFLinkerContext &ctx) {
       if (s->getExternalName().empty()) {
         lookups.push_back(make<OrdinalOnlyChunk>(ctx, ord));
         addresses.push_back(make<OrdinalOnlyChunk>(ctx, ord));
-        continue;
+      } else {
+        auto *c = make<HintNameChunk>(s->getExternalName(), ord);
+        lookups.push_back(make<LookupChunk>(ctx, c));
+        addresses.push_back(make<LookupChunk>(ctx, c));
+        hints.push_back(c);
       }
-      auto *c = make<HintNameChunk>(s->getExternalName(), ord);
-      lookups.push_back(make<LookupChunk>(ctx, c));
-      addresses.push_back(make<LookupChunk>(ctx, c));
-      hints.push_back(c);
+
+      if (s->file->impECSym) {
+        auto chunk = make<ECImportChunk>(s->file);
+        auxIat.push_back(chunk);
+        s->file->impECSym->setLocation(chunk);
+      }
     }
     // Terminate with null values.
     lookups.push_back(make<NullChunk>(ctx.config.wordsize));
     addresses.push_back(make<NullChunk>(ctx.config.wordsize));
+    if (ctx.config.machine == ARM64EC)
+      auxIat.push_back(make<NullChunk>(ctx.config.wordsize));
 
     for (int i = 0, e = syms.size(); i < e; ++i)
       syms[i]->setLocation(addresses[base + i]);
