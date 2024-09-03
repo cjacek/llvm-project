@@ -1002,7 +1002,7 @@ void ObjFile::enqueuePdbFile(StringRef path, ObjFile *fromFile) {
 }
 
 ImportFile::ImportFile(COFFLinkerContext &ctx, MemoryBufferRef m)
-    : InputFile(ctx, ImportKind, m), live(!ctx.config.doGC), thunkLive(live) {}
+    : InputFile(ctx, ImportKind, m), live(!ctx.config.doGC) {}
 
 MachineTypes ImportFile::getMachineType() const {
   uint16_t machine =
@@ -1095,7 +1095,7 @@ void ImportFile::parse() {
         chunk = make<ImportThunkChunkX86>(ctx, impSym);
         break;
       case ARM64:
-        chunk = make<ImportThunkChunkARM64>(ctx, impSym);
+        chunk = make<ImportThunkChunkARM64>(ctx, impSym, ARM64);
         break;
       case ARMNT:
         chunk = make<ImportThunkChunkARM>(ctx, impSym);
@@ -1107,7 +1107,11 @@ void ImportFile::parse() {
     } else {
       thunkSym = ctx.symtab.addImportThunk(
           name, impSym, make<ImportThunkChunkX64>(ctx, impSym));
-      // FIXME: Add aux IAT symbols.
+
+      StringRef auxThunkName =
+          saver().save(*getArm64ECMangledFunctionName(name));
+      auxThunkSym = ctx.symtab.addImportThunk(
+          auxThunkName, impECSym, make<ImportThunkChunkARM64>(ctx, impECSym, ARM64EC));
 
       StringRef impChkName = saver().save("__impchk_" + name);
       impchkThunk = make<ImportThunkChunkARM64EC>(this);
