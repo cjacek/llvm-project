@@ -826,7 +826,7 @@ void ImportThunkChunkARM64EC::writeTo(uint8_t *buf) const {
   if (Symbol *exitThunkSym = file->findECExitThunkSymbol())
     exitThunkRVA = cast<Defined>(exitThunkSym)->getRVA();
   else
-    log("exit thunk for " + file->impSym->getName() + " not found");
+    log("exit thunk for " + file->impECSym->getName() + " not found");
   applyArm64Addr(buf + 8, exitThunkRVA, rva + 8, 12);
   applyArm64Imm(buf + 12, exitThunkRVA & 0xfff, 0);
 
