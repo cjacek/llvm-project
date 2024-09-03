@@ -1002,7 +1002,7 @@ void ObjFile::enqueuePdbFile(StringRef path, ObjFile *fromFile) {
 }
 
 ImportFile::ImportFile(COFFLinkerContext &ctx, MemoryBufferRef m)
-    : InputFile(ctx, ImportKind, m), live(!ctx.config.doGC), thunkLive(live) {}
+    : InputFile(ctx, ImportKind, m), live(!ctx.config.doGC) {}
 
 MachineTypes ImportFile::getMachineType() const {
   uint16_t machine =
@@ -1088,7 +1088,9 @@ void ImportFile::parse() {
       thunkSym = ctx.symtab.addImportThunk(name, impSym, hdr->Machine);
     } else {
       thunkSym = ctx.symtab.addImportThunk(name, impSym, AMD64);
-      // FIXME: Add aux IAT symbols.
+      StringRef auxThunkName =
+          saver().save(*getArm64ECMangledFunctionName(name));
+      auxThunkSym = ctx.symtab.addImportThunk(auxThunkName, impECSym, ARM64EC);
 
       StringRef impChkName = saver().save("__impchk_" + name);
       chkECSym = ctx.symtab.addImportCheckThunk(impChkName, this);
