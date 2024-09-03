@@ -366,6 +366,8 @@ public:
   // Auxiliary IAT symbol and chunk on ARM64EC.
   DefinedImportData *impECSym = nullptr;
   Chunk *auxLocation = nullptr;
+  DefinedImportData *auxImpCopySym = nullptr;
+  Chunk *auxChkLocation = nullptr;
 
   // We want to eliminate dllimported symbols if no one actually refers to them.
   // These "Live" bits are used to keep track of which import library members

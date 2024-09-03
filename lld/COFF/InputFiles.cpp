@@ -1091,6 +1091,11 @@ void ImportFile::parse() {
     }
     if (!impECSym)
       return;
+
+    StringRef auxImpCopyName = saver().save("__auximpcopy_" + name);
+    auxImpCopySym = ctx.symtab.addImportData(auxImpCopyName, this, auxChkLocation);
+    if (!auxImpCopySym)
+      return;
   }
   // If this was a duplicate, we logged an error but may continue;
   // in this case, impSym is nullptr.
