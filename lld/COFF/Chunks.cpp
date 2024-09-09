@@ -1100,6 +1100,12 @@ void CHPERedirectionChunk::writeTo(uint8_t *buf) const {
 ImportThunkChunkARM64EC::ImportThunkChunkARM64EC(ImportFile *file)
     : ImportThunkChunk(file->ctx, file->impSym), file(file) {}
 
+size_t ImportThunkChunkARM64EC::getSize() const {
+  if (!extend)
+    return sizeof(importThunkARM64EC);
+  return sizeof(importThunkARM64EC) + sizeof(arm64Thunk) - sizeof(uint32_t);
+}
+
 void ImportThunkChunkARM64EC::writeTo(uint8_t *buf) const {
   memcpy(buf, importThunkARM64EC, sizeof(importThunkARM64EC));
   applyArm64Addr(buf, file->impSym->getRVA(), rva, 12);
@@ -1116,7 +1122,26 @@ void ImportThunkChunkARM64EC::writeTo(uint8_t *buf) const {
   applyArm64Imm(buf + 12, exitThunkRVA & 0xfff, 0);
 
   Defined *helper = cast<Defined>(file->ctx.config.arm64ECIcallHelper);
-  applyArm64Branch26(buf + 16, helper->getRVA() - rva - 16);
+  if (extend) {
+    memcpy(buf + 16, arm64Thunk, sizeof(arm64Thunk));
+    applyArm64Addr(buf + 16, helper->getRVA(), rva + 16, 12);
+    applyArm64Imm(buf + 20, helper->getRVA() & 0xfff, 0);
+  } else {
+    applyArm64Branch26(buf + 16, helper->getRVA() - rva - 16);
+  }
+}
+
+uint32_t ImportThunkChunkARM64EC::verifyRanges(bool fixup) {
+  if (extend)
+    return false;
+  auto helper = dyn_cast<Defined>(file->ctx.config.arm64ECIcallHelper);
+  if (!helper)
+    return 0;
+  int64_t diff = helper->getRVA() - rva - 16;
+  if (isInt<28>(diff))
+    return 0;
+  extend = fixup;
+  return sizeof(arm64Thunk) - sizeof(uint32_t);
 }
 
 } // namespace lld::coff
