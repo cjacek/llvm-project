@@ -185,6 +185,8 @@ public:
   // bytes, so this is used only for logging or debugging.
   virtual StringRef getDebugName() const { return ""; }
 
+  virtual uint32_t verifyRanges(bool fixup) { return 0; };
+
   static bool classof(const Chunk *c) { return c->kind() >= OtherKind; }
 
 protected:
@@ -620,11 +622,13 @@ private:
 class ImportThunkChunkARM64EC : public ImportThunkChunk {
 public:
   explicit ImportThunkChunkARM64EC(ImportFile *file);
-  size_t getSize() const override { return sizeof(importThunkARM64EC); };
+  size_t getSize() const override;
   MachineTypes getMachine() const override { return ARM64EC; }
   void writeTo(uint8_t *buf) const override;
+  uint32_t verifyRanges(bool fixup) override;
 
   Defined *exitThunk;
+  bool extend = false;
 
 private:
   ImportFile *file;
