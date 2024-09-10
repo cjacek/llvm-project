@@ -806,6 +806,14 @@ bool AArch64Arm64ECCallLowering::runOnModule(Module &Mod) {
   DenseMap<GlobalAlias *, GlobalAlias *> FnsMap;
   SetVector<GlobalAlias *> PatchableFns;
 
+  for (GlobalAlias &A : Mod.aliases()) {
+    if (!isa<Function>(A.getAliasee()))
+      continue;
+    if (std::optional<std::string> MangledName =
+            getArm64ECMangledFunctionName(A.getName().str()))
+      A.setName(MangledName.value());
+  }
+
   for (Function &F : Mod) {
     if (!F.hasFnAttribute(Attribute::HybridPatchable) || F.isDeclaration() ||
         F.hasLocalLinkage() || F.getName().ends_with("$hp_target"))
