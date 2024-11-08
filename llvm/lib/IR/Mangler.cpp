@@ -302,14 +302,23 @@ std::optional<std::string> llvm::getArm64ECMangledFunctionName(StringRef Name) {
   // Insert the ARM64EC "$$h" tag after the mangled function name.
   if (Name.contains("$$h"))
     return std::nullopt;
-  size_t InsertIdx = Name.find("@@");
-  size_t ThreeAtSignsIdx = Name.find("@@@");
-  if (InsertIdx != std::string::npos && InsertIdx != ThreeAtSignsIdx) {
+
+  // The last 4 characters of the symbol type may contain a `@@` if the symbol
+  // is returning a qualified type. We don't want to insert `$$h` at that point.
+  auto TrimmedName = Name.drop_back(4);
+
+  // The last `@@` is the separation between the qualified name of the symbol
+  // and its type, which is where we want to insert `$$h`.
+  auto InsertIdx = TrimmedName.rfind("@@");
+  if (InsertIdx != StringRef::npos) {
     InsertIdx += 2;
   } else {
-    InsertIdx = Name.find("@");
-    if (InsertIdx != std::string::npos)
-      InsertIdx++;
+    // If there is no `@@`, then this is a global symbol (e.g., `operator new`)
+    // so look for a `@` instead (since we assume that it will not return a
+    // qualified type).
+    InsertIdx = TrimmedName.find_last_of('@');
+    assert(InsertIdx != StringRef::npos && "Invalid mangled name");
+    InsertIdx += 1;
   }
 
   return std::optional<std::string>(
