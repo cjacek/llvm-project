@@ -317,7 +317,8 @@ std::optional<std::string> llvm::getArm64ECMangledFunctionName(StringRef Name) {
     // so look for a `@` instead (since we assume that it will not return a
     // qualified type).
     InsertIdx = TrimmedName.find_last_of('@');
-    assert(InsertIdx != StringRef::npos && "Invalid mangled name");
+    if (InsertIdx == StringRef::npos)
+      return std::nullopt;
     InsertIdx += 1;
   }
 

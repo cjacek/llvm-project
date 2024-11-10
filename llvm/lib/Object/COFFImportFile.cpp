@@ -756,8 +756,11 @@ Error writeImportLibrary(StringRef ImportName, StringRef Path,
           }
           Name = std::move(*MangledName);
         } else if (!E.Noname && ExportName.empty()) {
-          NameType = IMPORT_NAME_EXPORTAS;
-          ExportName = std::move(*getArm64ECDemangledFunctionName(Name));
+          if (std::optional<std::string> DemangledName =
+                  getArm64ECDemangledFunctionName(Name)) {
+            NameType = IMPORT_NAME_EXPORTAS;
+            ExportName = std::move(*DemangledName);
+          }
         }
       }
 
