@@ -106,7 +106,7 @@ private:
   StringRef findLib(StringRef filename);
   StringRef findLibMinGW(StringRef filename);
 
-  bool findUnderscoreMangle(StringRef sym);
+  bool findUnderscoreMangle(SymbolTable &symtab, StringRef sym);
 
   // Determines the location of the sysroot based on `args`, environment, etc.
   void detectWinSysRoot(const llvm::opt::InputArgList &args);
@@ -145,7 +145,7 @@ private:
   // Used by the resolver to parse .drectve section contents.
   void parseDirectives(InputFile *file);
 
-  void parseModuleDefs(StringRef path);
+  void parseModuleDefs(SymbolTable &symtab, StringRef path);
 
   // Parse an /order file. If an option is given, the linker places COMDAT
   // sections int he same order as their names appear in the given file.
@@ -165,7 +165,8 @@ private:
   // trees into one resource tree.
   void convertResources();
 
-  void maybeExportMinGWSymbols(const llvm::opt::InputArgList &args);
+  void maybeExportMinGWSymbols(SymbolTable &symtab,
+                               const llvm::opt::InputArgList &args);
 
   // We don't want to add the same file more than once.
   // Files are uniquified by their filesystem and file number.
@@ -173,11 +174,12 @@ private:
 
   std::set<std::string> visitedLibs;
 
-  Symbol *addUndefined(StringRef sym, bool aliasEC = false);
+  Symbol *addUndefined(SymbolTable &symtab, StringRef sym,
+                       bool aliasEC = false);
 
   void addUndefinedGlob(StringRef arg);
 
-  StringRef mangleMaybe(Symbol *s);
+  StringRef mangleMaybe(SymbolTable &symtab, Symbol *s);
 
   // Windows specific -- "main" is not the only main function in Windows.
   // You can choose one from these four -- {w,}{WinMain,main}.
@@ -201,7 +203,6 @@ private:
   std::vector<StringRef> filePaths;
   std::vector<MemoryBufferRef> resources;
 
-  llvm::DenseSet<StringRef> directivesExports;
   llvm::DenseSet<StringRef> excludedSymbols;
 
   COFFLinkerContext &ctx;
@@ -265,8 +266,8 @@ private:
 
   // Used for dllexported symbols.
   Export parseExport(StringRef arg);
-  void fixupExports();
-  void assignExportOrdinals();
+  void fixupExports(SymbolTable &symtab);
+  void assignExportOrdinals(SymbolTable &symtab);
 
   // Parses a string in the form of "key=value" and check
   // if value matches previous values for the key.

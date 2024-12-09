@@ -345,8 +345,9 @@ bool SymbolTable::handleMinGWAutomaticImport(Symbol *sym, StringRef name) {
 /// objFiles and bitcodeFiles (if not nullptr) are used to report where
 /// undefined symbols are referenced.
 static void reportProblemSymbols(
-    COFFLinkerContext &ctx, const SmallPtrSetImpl<Symbol *> &undefs,
+    SymbolTable &symtab, const SmallPtrSetImpl<Symbol *> &undefs,
     const DenseMap<Symbol *, Symbol *> *localImports, bool needBitcodeFiles) {
+  COFFLinkerContext &ctx = symtab.ctx;
   // Return early if there is nothing to report (which should be
   // the common case).
   if (undefs.empty() && (!localImports || localImports->empty()))
@@ -389,7 +390,7 @@ static void reportProblemSymbols(
     processFile(file, file->getSymbols());
 
   if (needBitcodeFiles)
-    for (BitcodeFile *file : ctx.bitcodeFileInstances)
+    for (BitcodeFile *file : symtab.bitcodeFileInstances)
       processFile(file, file->getSymbols());
 
   for (const UndefinedDiag &undefDiag : undefDiags)
@@ -420,7 +421,7 @@ void SymbolTable::reportUnresolvable() {
     undefs.insert(sym);
   }
 
-  reportProblemSymbols(ctx, undefs,
+  reportProblemSymbols(*this, undefs,
                        /* localImports */ nullptr, true);
 }
 
@@ -503,7 +504,7 @@ bool SymbolTable::resolveRemainingUndefines() {
   }
 
   reportProblemSymbols(
-      ctx, undefs,
+      *this, undefs,
       ctx.config.warnLocallyDefinedImported ? &localImports : nullptr, false);
   return foundLazy;
 }
@@ -904,15 +905,6 @@ void SymbolTable::addLibcall(StringRef name) {
   }
 }
 
-std::vector<Chunk *> SymbolTable::getChunks() const {
-  std::vector<Chunk *> res;
-  for (ObjFile *file : ctx.objFileInstances) {
-    ArrayRef<Chunk *> v = file->getChunks();
-    res.insert(res.end(), v.begin(), v.end());
-  }
-  return res;
-}
-
 Symbol *SymbolTable::find(StringRef name) const {
   return symMap.lookup(CachedHashStringRef(name));
 }
@@ -988,15 +980,15 @@ Symbol *SymbolTable::addUndefined(StringRef name) {
 }
 
 void SymbolTable::compileBitcodeFiles() {
-  if (ctx.bitcodeFileInstances.empty())
+  if (bitcodeFileInstances.empty())
     return;
 
   llvm::TimeTraceScope timeScope("Compile bitcode");
   ScopedTimer t(ctx.ltoTimer);
   lto.reset(new BitcodeCompiler(ctx));
-  for (BitcodeFile *f : ctx.bitcodeFileInstances)
+  for (BitcodeFile *f : bitcodeFileInstances)
     lto->add(*f);
-  for (InputFile *newObj : lto->compile()) {
+  for (InputFile *newObj : lto->compile(*this)) {
     ObjFile *obj = cast<ObjFile>(newObj);
     obj->parse();
     ctx.objFileInstances.push_back(obj);

@@ -9,6 +9,7 @@
 #ifndef LLD_COFF_SYMBOL_TABLE_H
 #define LLD_COFF_SYMBOL_TABLE_H
 
+#include "DLL.h"
 #include "InputFiles.h"
 #include "LTO.h"
 #include "llvm/ADT/CachedHashString.h"
@@ -25,6 +26,7 @@ namespace lld::coff {
 class Chunk;
 class CommonChunk;
 class COFFLinkerContext;
+class COFFNamespace;
 class Defined;
 class DefinedAbsolute;
 class DefinedRegular;
@@ -66,9 +68,6 @@ public:
   // doing stdcall fixups.
   void loadMinGWSymbols();
   bool handleMinGWAutomaticImport(Symbol *sym, StringRef name);
-
-  // Returns a list of chunks of selected symbols.
-  std::vector<Chunk *> getChunks() const;
 
   // Returns a symbol for a given name. Returns a nullptr if not found.
   Symbol *find(StringRef name) const;
@@ -129,6 +128,20 @@ public:
 
   // A list of EC EXP+ symbols.
   std::vector<Symbol *> expSymbols;
+
+  Symbol *entry = nullptr;
+
+  std::vector<Export> exports;
+  llvm::DenseSet<StringRef> directivesExports;
+  bool hadExplicitExports;
+
+  EdataContents edata;
+  Chunk *edataStart = nullptr;
+  Chunk *edataEnd = nullptr;
+
+  Symbol *delayLoadHelper = nullptr;
+
+  std::vector<BitcodeFile *> bitcodeFileInstances;
 
   // Iterates symbols in non-determinstic hash table order.
   template <typename T> void forEachSymbol(T callback) {

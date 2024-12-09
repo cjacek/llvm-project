@@ -37,6 +37,7 @@ namespace lld::coff {
 class BitcodeFile;
 class InputFile;
 class COFFLinkerContext;
+class SymbolTable;
 
 class BitcodeCompiler {
 public:
@@ -44,7 +45,7 @@ public:
   ~BitcodeCompiler();
 
   void add(BitcodeFile &f);
-  std::vector<InputFile *> compile();
+  std::vector<InputFile *> compile(SymbolTable &symtab);
 
 private:
   std::unique_ptr<llvm::lto::LTO> ltoObj;

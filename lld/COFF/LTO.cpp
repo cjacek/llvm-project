@@ -172,7 +172,7 @@ void BitcodeCompiler::add(BitcodeFile &f) {
 
 // Merge all the bitcode files we have seen, codegen the result
 // and return the resulting objects.
-std::vector<InputFile *> BitcodeCompiler::compile() {
+std::vector<InputFile *> BitcodeCompiler::compile(SymbolTable &symtab) {
   unsigned maxTasks = ltoObj->getMaxTasks();
   buf.resize(maxTasks);
   files.resize(maxTasks);

@@ -41,4 +41,13 @@ COFFLinkerContext::COFFLinkerContext()
       publicsLayoutTimer("Publics Stream Layout", totalPdbLinkTimer),
       tpiStreamLayoutTimer("TPI Stream Layout", totalPdbLinkTimer),
       diskCommitTimer("Commit to Disk", totalPdbLinkTimer) {}
+
+std::vector<Chunk *> COFFLinkerContext::getChunks() const {
+  std::vector<Chunk *> res;
+  for (ObjFile *file : objFileInstances) {
+    ArrayRef<Chunk *> v = file->getChunks();
+    res.insert(res.end(), v.begin(), v.end());
+  }
+  return res;
+}
 } // namespace lld::coff

@@ -25,9 +25,8 @@ using namespace lld;
 using namespace lld::coff;
 
 AutoExporter::AutoExporter(
-    COFFLinkerContext &ctx,
-    const llvm::DenseSet<StringRef> &manualExcludeSymbols)
-    : manualExcludeSymbols(manualExcludeSymbols), ctx(ctx) {
+    SymbolTable &symtab, const llvm::DenseSet<StringRef> &manualExcludeSymbols)
+    : manualExcludeSymbols(manualExcludeSymbols), symtab(symtab) {
   excludeLibs = {
       "libgcc",
       "libgcc_s",
@@ -84,7 +83,7 @@ AutoExporter::AutoExporter(
       "_NULL_THUNK_DATA",
   };
 
-  if (ctx.config.machine == I386) {
+  if (symtab.ctx.config.machine == I386) {
     excludeSymbols = {
         "__NULL_IMPORT_DESCRIPTOR",
         "__pei386_runtime_relocator",
@@ -151,7 +150,7 @@ bool AutoExporter::shouldExport(Defined *sym) const {
       return false;
 
   // If a corresponding __imp_ symbol exists and is defined, don't export it.
-  if (ctx.symtab.find(("__imp_" + sym->getName()).str()))
+  if (symtab.find(("__imp_" + sym->getName()).str()))
     return false;
 
   // Check that file is non-null before dereferencing it, symbols not
@@ -204,7 +203,7 @@ static StringRef mangle(Twine sym, MachineTypes machine) {
 // like they are not being used at all, so we explicitly set some flags so
 // that LTO won't eliminate them.
 std::vector<WrappedSymbol>
-lld::coff::addWrappedSymbols(COFFLinkerContext &ctx, opt::InputArgList &args) {
+lld::coff::addWrappedSymbols(SymbolTable &symtab, opt::InputArgList &args) {
   std::vector<WrappedSymbol> v;
   DenseSet<StringRef> seen;
 
@@ -213,14 +212,14 @@ lld::coff::addWrappedSymbols(COFFLinkerContext &ctx, opt::InputArgList &args) {
     if (!seen.insert(name).second)
       continue;
 
-    Symbol *sym = ctx.symtab.findUnderscore(name);
+    Symbol *sym = symtab.findUnderscore(name);
     if (!sym)
       continue;
 
-    Symbol *real =
-        ctx.symtab.addUndefined(mangle("__real_" + name, ctx.config.machine));
-    Symbol *wrap =
-        ctx.symtab.addUndefined(mangle("__wrap_" + name, ctx.config.machine));
+    Symbol *real = symtab.addUndefined(
+        mangle("__real_" + name, symtab.ctx.config.machine));
+    Symbol *wrap = symtab.addUndefined(
+        mangle("__wrap_" + name, symtab.ctx.config.machine));
     v.push_back({sym, real, wrap});
 
     // These symbols may seem undefined initially, but don't bail out
@@ -247,29 +246,29 @@ lld::coff::addWrappedSymbols(COFFLinkerContext &ctx, opt::InputArgList &args) {
 // When this function is executed, only InputFiles and symbol table
 // contain pointers to symbol objects. We visit them to replace pointers,
 // so that wrapped symbols are swapped as instructed by the command line.
-void lld::coff::wrapSymbols(COFFLinkerContext &ctx,
+void lld::coff::wrapSymbols(SymbolTable &symtab,
                             ArrayRef<WrappedSymbol> wrapped) {
   DenseMap<Symbol *, Symbol *> map;
   for (const WrappedSymbol &w : wrapped) {
     map[w.sym] = w.wrap;
     map[w.real] = w.sym;
     if (Defined *d = dyn_cast<Defined>(w.wrap)) {
-      Symbol *imp = ctx.symtab.find(("__imp_" + w.sym->getName()).str());
+      Symbol *imp = symtab.find(("__imp_" + w.sym->getName()).str());
       // Create a new defined local import for the wrap symbol. If
       // no imp prefixed symbol existed, there's no need for it.
       // (We can't easily distinguish whether any object file actually
       // referenced it or not, though.)
       if (imp) {
         DefinedLocalImport *wrapimp = make<DefinedLocalImport>(
-            ctx, saver().save("__imp_" + w.wrap->getName()), d);
-        ctx.symtab.localImportChunks.push_back(wrapimp->getChunk());
+            symtab.ctx, saver().save("__imp_" + w.wrap->getName()), d);
+        symtab.localImportChunks.push_back(wrapimp->getChunk());
         map[imp] = wrapimp;
       }
     }
   }
 
   // Update pointers in input files.
-  parallelForEach(ctx.objFileInstances, [&](ObjFile *file) {
+  parallelForEach(symtab.ctx.objFileInstances, [&](ObjFile *file) {
     MutableArrayRef<Symbol *> syms = file->getMutableSymbols();
     for (auto &sym : syms)
       if (Symbol *s = map.lookup(sym))

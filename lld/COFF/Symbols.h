@@ -387,7 +387,7 @@ public:
 
   StringRef getDLLName() { return file->dllName; }
   StringRef getExternalName() { return file->externalName; }
-  uint16_t getOrdinal() { return file->hdr->OrdinalHint; }
+  uint16_t getOrdinal() const { return file->getOrdinal(); }
 
   ImportFile *file;
   Chunk *&location;
