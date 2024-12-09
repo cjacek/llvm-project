@@ -121,11 +121,11 @@
 // BASERELOC:      BaseReloc [
 // BASERELOC-NEXT:   Entry {
 // BASERELOC-NEXT:     Type: DIR64
-// BASERELOC-NEXT:     Address: 0x1208
+// BASERELOC-NEXT:     Address: 0x10C8
 // BASERELOC-NEXT:   }
 // BASERELOC-NEXT:   Entry {
-// BASERELOC-NEXT:     Type: ABSOLUTE
-// BASERELOC-NEXT:     Address: 0x1000
+// BASERELOC-NEXT:     Type: DIR64
+// BASERELOC-NEXT:     Address: 0x1208
 // BASERELOC-NEXT:   }
 // BASERELOC-NEXT:   Entry {
 // BASERELOC-NEXT:     Type: DIR64

@@ -2592,6 +2592,28 @@ void Writer::createDynamicRelocs() {
                              LOAD_CONFIG_TABLE * sizeof(data_directory) +
                              offsetof(data_directory, Size),
                          ctx.hybridSymtab->loadConfigSize);
+
+  if (ctx.symtab.loadConfigSym && ctx.hybridSymtab->loadConfigSize) {
+    SectionChunk *chunk = ctx.symtab.loadConfigSym->getChunk();
+    ArrayRef<coff_relocation> curRelocs = chunk->getRelocs();
+    MutableArrayRef<coff_relocation> newRelocs(
+        bAlloc().Allocate<coff_relocation>(curRelocs.size() + 1),
+        curRelocs.size() + 1);
+    size_t chpeOffset =
+        ctx.symtab.loadConfigSym->getValue() +
+        offsetof(coff_load_configuration64, CHPEMetadataPointer);
+    size_t i;
+    for (i = 0;
+         i < curRelocs.size() && curRelocs[i].VirtualAddress < chpeOffset; i++)
+      newRelocs[i] = curRelocs[i];
+    newRelocs[i].VirtualAddress = chpeOffset;
+    newRelocs[i].SymbolTableIndex =
+        chunk->file->addRangeThunkSymbol(ctx.symtab.find("__ImageBase"));
+    newRelocs[i].Type = IMAGE_REL_ARM64_ADDR64;
+    while (i < curRelocs.size())
+      newRelocs[i + 1] = curRelocs[i];
+    chunk->setRelocs(newRelocs);
+  }
 }
 
 PartialSection *Writer::createPartialSection(StringRef name,
