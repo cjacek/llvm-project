@@ -351,11 +351,16 @@ public:
   explicit ImportFile(COFFLinkerContext &ctx, MemoryBufferRef m);
 
   static bool classof(const InputFile *f) { return f->kind() == ImportKind; }
-  MachineTypes getMachineType() const override;
+  MachineTypes getMachineType() const override { return getMachineType(mb); }
+  static MachineTypes getMachineType(MemoryBufferRef m);
+  bool matches(const ImportFile *other) const;
+  uint16_t getOrdinal() const { return hdr->OrdinalHint; }
+  bool isEC() const { return impECSym != nullptr; }
 
   DefinedImportData *impSym = nullptr;
   Defined *thunkSym = nullptr;
   ImportThunkChunkARM64EC *impchkThunk = nullptr;
+  ImportFile *hybridFile = nullptr;
   std::string dllName;
 
 private:

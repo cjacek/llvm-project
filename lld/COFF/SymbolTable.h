@@ -158,6 +158,8 @@ public:
   Chunk *edataStart = nullptr;
   Chunk *edataEnd = nullptr;
 
+  Symbol *delayLoadHelper = nullptr;
+
   void fixupExports();
   void assignExportOrdinals();
   void parseModuleDefs(StringRef path);

@@ -161,7 +161,8 @@ private:
   // trees into one resource tree.
   void convertResources();
 
-  void maybeExportMinGWSymbols(const llvm::opt::InputArgList &args);
+  void maybeExportMinGWSymbols(SymbolTable &symtab,
+                               const llvm::opt::InputArgList &args);
 
   // We don't want to add the same file more than once.
   // Files are uniquified by their filesystem and file number.

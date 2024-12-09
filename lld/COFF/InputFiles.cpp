@@ -1100,13 +1100,20 @@ void ObjFile::enqueuePdbFile(StringRef path, ObjFile *fromFile) {
 }
 
 ImportFile::ImportFile(COFFLinkerContext &ctx, MemoryBufferRef m)
-    : InputFile(ctx.symtab, ImportKind, m), live(!ctx.config.doGC) {}
+    : InputFile(ctx.getSymtab(getMachineType(m)), ImportKind, m),
+      live(!ctx.config.doGC) {}
 
-MachineTypes ImportFile::getMachineType() const {
+MachineTypes ImportFile::getMachineType(MemoryBufferRef m) {
   uint16_t machine =
-      reinterpret_cast<const coff_import_header *>(mb.getBufferStart())
-          ->Machine;
+      reinterpret_cast<const coff_import_header *>(m.getBufferStart())->Machine;
   return MachineTypes(machine);
+}
+
+bool ImportFile::matches(const ImportFile *other) const {
+  if (dllName != other->dllName)
+    return false;
+  return getOrdinal() ? getOrdinal() == other->getOrdinal()
+                      : externalName == other->externalName;
 }
 
 ImportThunkChunk *ImportFile::makeImportThunk() {
