@@ -140,7 +140,7 @@ private:
   // Used by the resolver to parse .drectve section contents.
   void parseDirectives(InputFile *file);
 
-  void parseModuleDefs(StringRef path);
+  void parseModuleDefs(SymbolTable &symtab, StringRef path);
 
   // Parse an /order file. If an option is given, the linker places COMDAT
   // sections int he same order as their names appear in the given file.
@@ -160,7 +160,8 @@ private:
   // trees into one resource tree.
   void convertResources();
 
-  void maybeExportMinGWSymbols(const llvm::opt::InputArgList &args);
+  void maybeExportMinGWSymbols(SymbolTable &symtab,
+                               const llvm::opt::InputArgList &args);
 
   // We don't want to add the same file more than once.
   // Files are uniquified by their filesystem and file number.
@@ -190,7 +191,6 @@ private:
   std::list<std::function<void()>> taskQueue;
   std::vector<MemoryBufferRef> resources;
 
-  llvm::DenseSet<StringRef> directivesExports;
   llvm::DenseSet<StringRef> excludedSymbols;
 
   COFFLinkerContext &ctx;

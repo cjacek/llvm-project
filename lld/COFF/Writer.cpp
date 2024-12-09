@@ -252,8 +252,9 @@ private:
   void getSymbolsFromSections(ObjFile *file,
                               ArrayRef<SectionChunk *> symIdxChunks,
                               std::vector<Symbol *> &symbols);
-  void maybeAddRVATable(SymbolRVASet tableSymbols, StringRef tableSym,
-                        StringRef countSym, bool hasFlag=false);
+  void maybeAddRVATable(SymbolTable &symtab, SymbolRVASet tableSymbols,
+                        StringRef tableSym, StringRef countSym,
+                        bool hasFlag = false);
   void setSectionPermissions();
   void setECSymbols();
   void writeSections();
@@ -293,8 +294,6 @@ private:
   IdataContents idata;
   Chunk *importTableStart = nullptr;
   uint64_t importTableSize = 0;
-  Chunk *edataStart = nullptr;
-  Chunk *edataEnd = nullptr;
   Chunk *iatStart = nullptr;
   uint64_t iatSize = 0;
   DelayLoadContents delayIdata;
@@ -1090,8 +1089,8 @@ void Writer::createSections() {
     if (name.starts_with(".tls"))
       tlsAlignment = std::max(tlsAlignment, c->getAlignment());
 
-    PartialSection *pSec = createPartialSection(name,
-                                                c->getOutputCharacteristics());
+    PartialSection *pSec =
+        createPartialSection(name, c->getOutputCharacteristics());
     pSec->chunks.push_back(c);
   }
 
@@ -1183,10 +1182,12 @@ void Writer::createMiscChunks() {
   }
 
   // Create thunks for locally-dllimported symbols.
-  if (!ctx.symtab.localImportChunks.empty()) {
-    for (Chunk *c : ctx.symtab.localImportChunks)
-      rdataSec->addChunk(c);
-  }
+  ctx.forEachSymtab([&](SymbolTable &symtab) {
+    if (!symtab.localImportChunks.empty()) {
+      for (Chunk *c : symtab.localImportChunks)
+        rdataSec->addChunk(c);
+    }
+  });
 
   // Create Debug Information Chunks
   debugInfoSec = config->mingw ? buildidSec : rdataSec;
@@ -1205,9 +1206,11 @@ void Writer::createMiscChunks() {
     // if we're ultimately not going to write CodeView data to the PDB.
     buildId = make<CVDebugRecordChunk>(ctx);
     debugRecords.emplace_back(COFF::IMAGE_DEBUG_TYPE_CODEVIEW, buildId);
-    if (Symbol *buildidSym = ctx.symtab.findUnderscore("__buildid"))
-      replaceSymbol<DefinedSynthetic>(buildidSym, buildidSym->getName(),
-                                      buildId, 4);
+    ctx.forEachSymtab([&](SymbolTable &symtab) {
+      if (Symbol *buildidSym = symtab.findUnderscore("__buildid"))
+        replaceSymbol<DefinedSynthetic>(buildidSym, buildidSym->getName(),
+                                        buildId, 4);
+    });
   }
 
   if (config->cetCompat) {
@@ -1299,8 +1302,7 @@ void Writer::appendImportThunks() {
   }
 
   if (!delayIdata.empty()) {
-    Defined *helper = cast<Defined>(ctx.config.delayLoadHelper);
-    delayIdata.create(helper);
+    delayIdata.create();
     for (Chunk *c : delayIdata.getChunks())
       didatSec->addChunk(c);
     for (Chunk *c : delayIdata.getDataChunks())
@@ -1318,25 +1320,49 @@ void Writer::appendImportThunks() {
 
 void Writer::createExportTable() {
   llvm::TimeTraceScope timeScope("Export table");
+
   if (!edataSec->chunks.empty()) {
+    if (ctx.hybridSymtab) {
+      llvm::stable_sort(edataSec->chunks, [=](const Chunk *a, const Chunk *b) {
+        return (a->getMachine() != ARM64) < (b->getMachine() != ARM64);
+      });
+
+      for (auto chunk : edataSec->chunks) {
+        if (chunk->getMachine() != ARM64) {
+          ctx.hybridSymtab->edataStart = chunk;
+          ctx.hybridSymtab->edataEnd = edataSec->chunks.back();
+          break;
+        }
+
+        if (!ctx.symtab.edataStart)
+          ctx.symtab.edataStart = chunk;
+        ctx.symtab.edataEnd = chunk;
+      }
+    } else {
+      ctx.symtab.edataStart = edataSec->chunks.front();
+      ctx.symtab.edataEnd = edataSec->chunks.back();
+    }
+  }
+  ctx.forEachSymtab([&](SymbolTable &symtab) {
     // Allow using a custom built export table from input object files, instead
     // of having the linker synthesize the tables.
-    if (ctx.config.hadExplicitExports)
-      Warn(ctx) << "literal .edata sections override exports";
-  } else if (!ctx.symtab.exports.empty()) {
-    std::vector<Chunk *> chunks;
-    createEdataContents(ctx.symtab, chunks);
-    for (Chunk *c : chunks)
-      edataSec->addChunk(c);
-  }
-  if (!edataSec->chunks.empty()) {
-    edataStart = edataSec->chunks.front();
-    edataEnd = edataSec->chunks.back();
-  }
-  // Warn on exported deleting destructor.
-  for (auto e : ctx.symtab.exports)
-    if (e.sym && e.sym->getName().starts_with("??_G"))
-      Warn(ctx) << "export of deleting dtor: " << e.sym;
+    if (symtab.edataStart) {
+      if (symtab.hadExplicitExports)
+        Warn(ctx) << "literal .edata sections override exports";
+    } else if (!symtab.exports.empty()) {
+      std::vector<Chunk *> chunks;
+      createEdataContents(symtab, chunks);
+      for (Chunk *c : chunks)
+        edataSec->addChunk(c);
+      symtab.edataStart = chunks.front();
+      symtab.edataEnd = chunks.back();
+    }
+
+    // Warn on exported deleting destructor.
+    for (auto e : symtab.exports)
+      if (e.sym && e.sym->getName().starts_with("??_G"))
+        Warn(ctx) << "export of deleting dtor: " << toString(ctx, *e.sym);
+  });
 }
 
 void Writer::removeUnusedSections() {
@@ -1669,6 +1695,7 @@ template <typename PEHeaderTy> void Writer::writeHeader() {
   // When run under Windows, the loader looks at AddressOfNewExeHeader and uses
   // the PE header instead.
   Configuration *config = &ctx.config;
+  SymbolTable &symtab = ctx.symtab;
   uint8_t *buf = buffer->getBufferStart();
   auto *dos = reinterpret_cast<dos_header *>(buf);
   buf += sizeof(dos_header);
@@ -1693,16 +1720,7 @@ template <typename PEHeaderTy> void Writer::writeHeader() {
   assert(coffHeaderOffset == buf - buffer->getBufferStart());
   auto *coff = reinterpret_cast<coff_file_header *>(buf);
   buf += sizeof(*coff);
-  switch (config->machine) {
-  case ARM64EC:
-    coff->Machine = AMD64;
-    break;
-  case ARM64X:
-    coff->Machine = ARM64;
-    break;
-  default:
-    coff->Machine = config->machine;
-  }
+  coff->Machine = symtab.machine == ARM64EC ? AMD64 : symtab.machine;
   coff->NumberOfSections = ctx.outputSections.size();
   coff->Characteristics = IMAGE_FILE_EXECUTABLE_IMAGE;
   if (config->largeAddressAware)
@@ -1749,7 +1767,7 @@ template <typename PEHeaderTy> void Writer::writeHeader() {
   pe->SizeOfImage = sizeOfImage;
   pe->SizeOfHeaders = sizeOfHeaders;
   if (!config->noEntry) {
-    Defined *entry = cast<Defined>(ctx.symtab.entry);
+    Defined *entry = cast<Defined>(symtab.entry);
     pe->AddressOfEntryPoint = entry->getRVA();
     // Pointer to thumb code must have the LSB set, so adjust it.
     if (config->machine == ARMNT)
@@ -1793,10 +1811,11 @@ template <typename PEHeaderTy> void Writer::writeHeader() {
          dataDirOffset64 == buf - buffer->getBufferStart());
   auto *dir = reinterpret_cast<data_directory *>(buf);
   buf += sizeof(*dir) * numberOfDataDirectory;
-  if (edataStart) {
-    dir[EXPORT_TABLE].RelativeVirtualAddress = edataStart->getRVA();
-    dir[EXPORT_TABLE].Size =
-        edataEnd->getRVA() + edataEnd->getSize() - edataStart->getRVA();
+  if (symtab.edataStart) {
+    dir[EXPORT_TABLE].RelativeVirtualAddress = symtab.edataStart->getRVA();
+    dir[EXPORT_TABLE].Size = symtab.edataEnd->getRVA() +
+                             symtab.edataEnd->getSize() -
+                             symtab.edataStart->getRVA();
   }
   if (importTableStart) {
     dir[IMPORT_TABLE].RelativeVirtualAddress = importTableStart->getRVA();
@@ -1827,7 +1846,7 @@ template <typename PEHeaderTy> void Writer::writeHeader() {
     dir[BASE_RELOCATION_TABLE].RelativeVirtualAddress = relocSec->getRVA();
     dir[BASE_RELOCATION_TABLE].Size = relocSize;
   }
-  if (Symbol *sym = ctx.symtab.findUnderscore("_tls_used")) {
+  if (Symbol *sym = symtab.findUnderscore("_tls_used")) {
     if (Defined *b = dyn_cast<Defined>(sym)) {
       dir[TLS_TABLE].RelativeVirtualAddress = b->getRVA();
       dir[TLS_TABLE].Size = config->is64()
@@ -1896,7 +1915,7 @@ void Writer::createSEHTable() {
   setNoSEHCharacteristic =
       handlers.empty() || !ctx.symtab.findUnderscore("_load_config_used");
 
-  maybeAddRVATable(std::move(handlers), "__safe_se_handler_table",
+  maybeAddRVATable(ctx.symtab, std::move(handlers), "__safe_se_handler_table",
                    "__safe_se_handler_count");
 }
 
@@ -1997,9 +2016,11 @@ void Writer::createGuardCFTables() {
     // with /guard:cf.
     for (ObjFile *file : ctx.objFileInstances) {
       if (file->hasGuardCF()) {
-        Symbol *flagSym = ctx.symtab.findUnderscore("__guard_flags");
-        cast<DefinedAbsolute>(flagSym)->setVA(
-            uint32_t(GuardFlags::CF_INSTRUMENTED));
+        ctx.forEachSymtab([&](SymbolTable &symtab) {
+          Symbol *flagSym = symtab.findUnderscore("__guard_flags");
+          cast<DefinedAbsolute>(flagSym)->setVA(
+              uint32_t(GuardFlags::CF_INSTRUMENTED));
+        });
         break;
       }
     }
@@ -2056,33 +2077,35 @@ void Writer::createGuardCFTables() {
     if (c.inputChunk->getAlignment() < 16)
       c.inputChunk->setAlignment(16);
 
-  maybeAddRVATable(std::move(addressTakenSyms), "__guard_fids_table",
-                   "__guard_fids_count");
+  ctx.forEachSymtab([&](SymbolTable &symtab) {
+    maybeAddRVATable(symtab, std::move(addressTakenSyms), "__guard_fids_table",
+                     "__guard_fids_count");
 
-  // Add the Guard Address Taken IAT Entry Table (.giats).
-  maybeAddRVATable(std::move(giatsRVASet), "__guard_iat_table",
-                   "__guard_iat_count");
+    // Add the Guard Address Taken IAT Entry Table (.giats).
+    maybeAddRVATable(symtab, std::move(giatsRVASet), "__guard_iat_table",
+                     "__guard_iat_count");
 
-  // Add the longjmp target table unless the user told us not to.
-  if (config->guardCF & GuardCFLevel::LongJmp)
-    maybeAddRVATable(std::move(longJmpTargets), "__guard_longjmp_table",
-                     "__guard_longjmp_count");
+    // Add the longjmp target table unless the user told us not to.
+    if (config->guardCF & GuardCFLevel::LongJmp)
+      maybeAddRVATable(symtab, std::move(longJmpTargets),
+                       "__guard_longjmp_table", "__guard_longjmp_count");
 
-  // Add the ehcont target table unless the user told us not to.
-  if (config->guardCF & GuardCFLevel::EHCont)
-    maybeAddRVATable(std::move(ehContTargets), "__guard_eh_cont_table",
-                     "__guard_eh_cont_count");
+    // Add the ehcont target table unless the user told us not to.
+    if (config->guardCF & GuardCFLevel::EHCont)
+      maybeAddRVATable(symtab, std::move(ehContTargets),
+                       "__guard_eh_cont_table", "__guard_eh_cont_count");
 
-  // Set __guard_flags, which will be used in the load config to indicate that
-  // /guard:cf was enabled.
-  uint32_t guardFlags = uint32_t(GuardFlags::CF_INSTRUMENTED) |
-                        uint32_t(GuardFlags::CF_FUNCTION_TABLE_PRESENT);
-  if (config->guardCF & GuardCFLevel::LongJmp)
-    guardFlags |= uint32_t(GuardFlags::CF_LONGJUMP_TABLE_PRESENT);
-  if (config->guardCF & GuardCFLevel::EHCont)
-    guardFlags |= uint32_t(GuardFlags::EH_CONTINUATION_TABLE_PRESENT);
-  Symbol *flagSym = ctx.symtab.findUnderscore("__guard_flags");
-  cast<DefinedAbsolute>(flagSym)->setVA(guardFlags);
+    // Set __guard_flags, which will be used in the load config to indicate that
+    // /guard:cf was enabled.
+    uint32_t guardFlags = uint32_t(GuardFlags::CF_INSTRUMENTED) |
+                          uint32_t(GuardFlags::CF_FUNCTION_TABLE_PRESENT);
+    if (config->guardCF & GuardCFLevel::LongJmp)
+      guardFlags |= uint32_t(GuardFlags::CF_LONGJUMP_TABLE_PRESENT);
+    if (config->guardCF & GuardCFLevel::EHCont)
+      guardFlags |= uint32_t(GuardFlags::EH_CONTINUATION_TABLE_PRESENT);
+    Symbol *flagSym = symtab.findUnderscore("__guard_flags");
+    cast<DefinedAbsolute>(flagSym)->setVA(guardFlags);
+  });
 }
 
 // Take a list of input sections containing symbol table indices and add those
@@ -2141,8 +2164,9 @@ void Writer::markSymbolsForRVATable(ObjFile *file,
 // Replace the absolute table symbol with a synthetic symbol pointing to
 // tableChunk so that we can emit base relocations for it and resolve section
 // relative relocations.
-void Writer::maybeAddRVATable(SymbolRVASet tableSymbols, StringRef tableSym,
-                              StringRef countSym, bool hasFlag) {
+void Writer::maybeAddRVATable(SymbolTable &symtab, SymbolRVASet tableSymbols,
+                              StringRef tableSym, StringRef countSym,
+                              bool hasFlag) {
   if (tableSymbols.empty())
     return;
 
@@ -2153,8 +2177,8 @@ void Writer::maybeAddRVATable(SymbolRVASet tableSymbols, StringRef tableSym,
     tableChunk = make<RVATableChunk>(std::move(tableSymbols));
   rdataSec->addChunk(tableChunk);
 
-  Symbol *t = ctx.symtab.findUnderscore(tableSym);
-  Symbol *c = ctx.symtab.findUnderscore(countSym);
+  Symbol *t = symtab.findUnderscore(tableSym);
+  Symbol *c = symtab.findUnderscore(countSym);
   replaceSymbol<DefinedSynthetic>(t, t->getName(), tableChunk);
   cast<DefinedAbsolute>(c)->setVA(tableChunk->getSize() / (hasFlag ? 5 : 4));
 }
@@ -2240,27 +2264,30 @@ void Writer::createRuntimePseudoRelocs() {
     return;
   }
 
-  if (!rels.empty()) {
-    Log(ctx) << "Writing " << rels.size() << " runtime pseudo relocations";
-    const char *symbolName = "_pei386_runtime_relocator";
-    Symbol *relocator = ctx.symtab.findUnderscore(symbolName);
-    if (!relocator)
-      Err(ctx)
-          << "output image has runtime pseudo relocations, but the function "
-          << symbolName
-          << " is missing; it is needed for fixing the relocations at runtime";
-  }
+  ctx.forEachSymtab([&](SymbolTable &symtab) {
+    if (!rels.empty()) {
+      Log(ctx) << "Writing " << Twine(rels.size())
+               << " runtime pseudo relocations";
+      const char *symbolName = "_pei386_runtime_relocator";
+      Symbol *relocator = symtab.findUnderscore(symbolName);
+      if (!relocator)
+        Err(ctx)
+            << "output image has runtime pseudo relocations, but the function "
+            << symbolName
+            << " is missing; it is needed for fixing the relocations at "
+               "runtime";
+    }
 
-  PseudoRelocTableChunk *table = make<PseudoRelocTableChunk>(rels);
-  rdataSec->addChunk(table);
-  EmptyChunk *endOfList = make<EmptyChunk>();
-  rdataSec->addChunk(endOfList);
+    PseudoRelocTableChunk *table = make<PseudoRelocTableChunk>(rels);
+    rdataSec->addChunk(table);
+    EmptyChunk *endOfList = make<EmptyChunk>();
+    rdataSec->addChunk(endOfList);
 
-  Symbol *headSym = ctx.symtab.findUnderscore("__RUNTIME_PSEUDO_RELOC_LIST__");
-  Symbol *endSym =
-      ctx.symtab.findUnderscore("__RUNTIME_PSEUDO_RELOC_LIST_END__");
-  replaceSymbol<DefinedSynthetic>(headSym, headSym->getName(), table);
-  replaceSymbol<DefinedSynthetic>(endSym, endSym->getName(), endOfList);
+    Symbol *headSym = symtab.findUnderscore("__RUNTIME_PSEUDO_RELOC_LIST__");
+    Symbol *endSym = symtab.findUnderscore("__RUNTIME_PSEUDO_RELOC_LIST_END__");
+    replaceSymbol<DefinedSynthetic>(headSym, headSym->getName(), table);
+    replaceSymbol<DefinedSynthetic>(endSym, endSym->getName(), endOfList);
+  });
 }
 
 // MinGW specific.
@@ -2269,21 +2296,23 @@ void Writer::createRuntimePseudoRelocs() {
 // There's a symbol pointing to the start sentinel pointer, __CTOR_LIST__
 // and __DTOR_LIST__ respectively.
 void Writer::insertCtorDtorSymbols() {
-  AbsolutePointerChunk *ctorListHead = make<AbsolutePointerChunk>(ctx, -1);
-  AbsolutePointerChunk *ctorListEnd = make<AbsolutePointerChunk>(ctx, 0);
-  AbsolutePointerChunk *dtorListHead = make<AbsolutePointerChunk>(ctx, -1);
-  AbsolutePointerChunk *dtorListEnd = make<AbsolutePointerChunk>(ctx, 0);
-  ctorsSec->insertChunkAtStart(ctorListHead);
-  ctorsSec->addChunk(ctorListEnd);
-  dtorsSec->insertChunkAtStart(dtorListHead);
-  dtorsSec->addChunk(dtorListEnd);
+  ctx.forEachSymtab([&](SymbolTable &symtab) {
+    AbsolutePointerChunk *ctorListHead = make<AbsolutePointerChunk>(ctx, -1);
+    AbsolutePointerChunk *ctorListEnd = make<AbsolutePointerChunk>(ctx, 0);
+    AbsolutePointerChunk *dtorListHead = make<AbsolutePointerChunk>(ctx, -1);
+    AbsolutePointerChunk *dtorListEnd = make<AbsolutePointerChunk>(ctx, 0);
+    ctorsSec->insertChunkAtStart(ctorListHead);
+    ctorsSec->addChunk(ctorListEnd);
+    dtorsSec->insertChunkAtStart(dtorListHead);
+    dtorsSec->addChunk(dtorListEnd);
 
-  Symbol *ctorListSym = ctx.symtab.findUnderscore("__CTOR_LIST__");
-  Symbol *dtorListSym = ctx.symtab.findUnderscore("__DTOR_LIST__");
-  replaceSymbol<DefinedSynthetic>(ctorListSym, ctorListSym->getName(),
-                                  ctorListHead);
-  replaceSymbol<DefinedSynthetic>(dtorListSym, dtorListSym->getName(),
-                                  dtorListHead);
+    Symbol *ctorListSym = symtab.findUnderscore("__CTOR_LIST__");
+    Symbol *dtorListSym = symtab.findUnderscore("__DTOR_LIST__");
+    replaceSymbol<DefinedSynthetic>(ctorListSym, ctorListSym->getName(),
+                                    ctorListHead);
+    replaceSymbol<DefinedSynthetic>(dtorListSym, dtorListSym->getName(),
+                                    dtorListHead);
+  });
 }
 
 // Handles /section options to allow users to overwrite
@@ -2366,6 +2395,12 @@ void Writer::setECSymbols() {
                                        altEntrySym->getRVA());
   }
 
+  if (symtab->edataStart)
+    ctx.dynamicRelocs->set(
+        dataDirOffset64 + EXPORT_TABLE * sizeof(data_directory) +
+            offsetof(data_directory, Size),
+        symtab->edataEnd->getRVA() - symtab->edataStart->getRVA() +
+            symtab->edataEnd->getSize());
   if (hybridPdata.first)
     ctx.dynamicRelocs->set(
         dataDirOffset64 + EXCEPTION_TABLE * sizeof(data_directory) +
@@ -2624,6 +2659,22 @@ void Writer::createDynamicRelocs() {
     }
   }
 
+  if (ctx.symtab.edataStart || ctx.hybridSymtab->edataStart) {
+    ctx.dynamicRelocs->add(IMAGE_DVRT_ARM64X_FIXUP_TYPE_VALUE, sizeof(uint32_t),
+                           dataDirOffset64 +
+                               EXPORT_TABLE * sizeof(data_directory) +
+                               offsetof(data_directory, RelativeVirtualAddress),
+                           ctx.hybridSymtab->edataStart);
+    ctx.dynamicRelocs->add(IMAGE_DVRT_ARM64X_FIXUP_TYPE_VALUE, sizeof(uint32_t),
+                           dataDirOffset64 +
+                               EXPORT_TABLE * sizeof(data_directory) +
+                               offsetof(data_directory, Size),
+                           Arm64XRelocVal());
+  }
+
+  // FIXME: RELOC_TABLE ?
+  // FIXME: DEBUG_DIRECTORY ?
+
   if (pdata.first || hybridPdata.first) {
     ctx.dynamicRelocs->add(IMAGE_DVRT_ARM64X_FIXUP_TYPE_VALUE, sizeof(uint32_t),
                            dataDirOffset64 +
@@ -2667,33 +2718,35 @@ PartialSection *Writer::findPartialSection(StringRef name, uint32_t outChars) {
 }
 
 void Writer::fixTlsAlignment() {
-  Defined *tlsSym =
-      dyn_cast_or_null<Defined>(ctx.symtab.findUnderscore("_tls_used"));
-  if (!tlsSym)
-    return;
+  ctx.forEachSymtab([&](SymbolTable &symtab) {
+    Defined *tlsSym =
+        dyn_cast_or_null<Defined>(symtab.findUnderscore("_tls_used"));
+    if (!tlsSym)
+      return;
 
-  OutputSection *sec = ctx.getOutputSection(tlsSym->getChunk());
-  assert(sec && tlsSym->getRVA() >= sec->getRVA() &&
-         "no output section for _tls_used");
+    OutputSection *sec = ctx.getOutputSection(tlsSym->getChunk());
+    assert(sec && tlsSym->getRVA() >= sec->getRVA() &&
+           "no output section for _tls_used");
 
-  uint8_t *secBuf = buffer->getBufferStart() + sec->getFileOff();
-  uint64_t tlsOffset = tlsSym->getRVA() - sec->getRVA();
-  uint64_t directorySize = ctx.config.is64()
-                               ? sizeof(object::coff_tls_directory64)
-                               : sizeof(object::coff_tls_directory32);
+    uint8_t *secBuf = buffer->getBufferStart() + sec->getFileOff();
+    uint64_t tlsOffset = tlsSym->getRVA() - sec->getRVA();
+    uint64_t directorySize = ctx.config.is64()
+                                 ? sizeof(object::coff_tls_directory64)
+                                 : sizeof(object::coff_tls_directory32);
 
-  if (tlsOffset + directorySize > sec->getRawSize())
-    Fatal(ctx) << "_tls_used sym is malformed";
+    if (tlsOffset + directorySize > sec->getRawSize())
+      Fatal(ctx) << "_tls_used sym is malformed";
 
-  if (ctx.config.is64()) {
-    object::coff_tls_directory64 *tlsDir =
-        reinterpret_cast<object::coff_tls_directory64 *>(&secBuf[tlsOffset]);
-    tlsDir->setAlignment(tlsAlignment);
-  } else {
-    object::coff_tls_directory32 *tlsDir =
-        reinterpret_cast<object::coff_tls_directory32 *>(&secBuf[tlsOffset]);
-    tlsDir->setAlignment(tlsAlignment);
-  }
+    if (ctx.config.is64()) {
+      object::coff_tls_directory64 *tlsDir =
+          reinterpret_cast<object::coff_tls_directory64 *>(&secBuf[tlsOffset]);
+      tlsDir->setAlignment(tlsAlignment);
+    } else {
+      object::coff_tls_directory32 *tlsDir =
+          reinterpret_cast<object::coff_tls_directory32 *>(&secBuf[tlsOffset]);
+      tlsDir->setAlignment(tlsAlignment);
+    }
+  });
 }
 
 void Writer::prepareLoadConfig() {

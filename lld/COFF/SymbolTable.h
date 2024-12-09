@@ -9,6 +9,7 @@
 #ifndef LLD_COFF_SYMBOL_TABLE_H
 #define LLD_COFF_SYMBOL_TABLE_H
 
+#include "DLL.h"
 #include "InputFiles.h"
 #include "LTO.h"
 #include "llvm/ADT/CachedHashString.h"
@@ -140,6 +141,15 @@ public:
   // A list of EC EXP+ symbols.
   std::vector<Symbol *> expSymbols;
 
+  std::vector<Export> exports;
+  llvm::DenseSet<StringRef> directivesExports;
+  bool hadExplicitExports;
+
+  Chunk *edataStart = nullptr;
+  Chunk *edataEnd = nullptr;
+
+  Symbol *delayLoadHelper = nullptr;
+
   // Iterates symbols in non-determinstic hash table order.
   template <typename T> void forEachSymbol(T callback) {
     for (auto &pair : symMap)
@@ -151,8 +161,6 @@ public:
   DefinedRegular *loadConfigSym = nullptr;
   uint32_t loadConfigSize = 0;
   void initializeLoadConfig();
-
-  std::vector<Export> exports;
 
   void fixupExports();
   void assignExportOrdinals();

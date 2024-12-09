@@ -161,10 +161,8 @@ struct Configuration {
   bool dll = false;
   StringRef implib;
   bool noimplib = false;
-  bool hadExplicitExports;
   std::set<std::string> delayLoads;
   std::map<std::string, int> dllOrder;
-  Symbol *delayLoadHelper = nullptr;
   Symbol *arm64ECIcallHelper = nullptr;
 
   llvm::DenseSet<llvm::StringRef> saveTempsArgs;
