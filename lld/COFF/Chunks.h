@@ -564,7 +564,7 @@ static const uint8_t importThunkARM64EC[] = {
 // contents will be a JMP instruction to some __imp_ symbol.
 class ImportThunkChunk : public NonSectionCodeChunk {
 public:
-  ImportThunkChunk(COFFLinkerContext &ctx, Defined *s);
+  ImportThunkChunk(SymbolTable &symtab, Defined *s);
   static bool classof(const Chunk *c) { return c->kind() == ImportThunkKind; }
 
   // We track the usage of the thunk symbol separately from the import file
@@ -573,12 +573,12 @@ public:
 
 protected:
   Defined *impSymbol;
-  COFFLinkerContext &ctx;
+  SymbolTable &symtab;
 };
 
 class ImportThunkChunkX64 : public ImportThunkChunk {
 public:
-  explicit ImportThunkChunkX64(COFFLinkerContext &ctx, Defined *s);
+  explicit ImportThunkChunkX64(SymbolTable &symtab, Defined *s);
   size_t getSize() const override { return sizeof(importThunkX86); }
   void writeTo(uint8_t *buf) const override;
   MachineTypes getMachine() const override { return AMD64; }
@@ -586,8 +586,8 @@ public:
 
 class ImportThunkChunkX86 : public ImportThunkChunk {
 public:
-  explicit ImportThunkChunkX86(COFFLinkerContext &ctx, Defined *s)
-      : ImportThunkChunk(ctx, s) {}
+  explicit ImportThunkChunkX86(SymbolTable &symtab, Defined *s)
+      : ImportThunkChunk(symtab, s) {}
   size_t getSize() const override { return sizeof(importThunkX86); }
   void getBaserels(std::vector<Baserel> *res) override;
   void writeTo(uint8_t *buf) const override;
@@ -596,8 +596,8 @@ public:
 
 class ImportThunkChunkARM : public ImportThunkChunk {
 public:
-  explicit ImportThunkChunkARM(COFFLinkerContext &ctx, Defined *s)
-      : ImportThunkChunk(ctx, s) {
+  explicit ImportThunkChunkARM(SymbolTable &symtab, Defined *s)
+      : ImportThunkChunk(symtab, s) {
     setAlignment(2);
   }
   size_t getSize() const override { return sizeof(importThunkARM); }
@@ -608,9 +608,9 @@ public:
 
 class ImportThunkChunkARM64 : public ImportThunkChunk {
 public:
-  explicit ImportThunkChunkARM64(COFFLinkerContext &ctx, Defined *s,
+  explicit ImportThunkChunkARM64(SymbolTable &symtab, Defined *s,
                                  MachineTypes machine)
-      : ImportThunkChunk(ctx, s), machine(machine) {
+      : ImportThunkChunk(symtab, s), machine(machine) {
     setAlignment(4);
   }
   size_t getSize() const override { return sizeof(importThunkARM64); }

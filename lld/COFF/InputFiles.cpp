@@ -1112,13 +1112,13 @@ MachineTypes ImportFile::getMachineType() const {
 ImportThunkChunk *ImportFile::makeImportThunk() {
   switch (hdr->Machine) {
   case AMD64:
-    return make<ImportThunkChunkX64>(symtab.ctx, impSym);
+    return make<ImportThunkChunkX64>(symtab, impSym);
   case I386:
-    return make<ImportThunkChunkX86>(symtab.ctx, impSym);
+    return make<ImportThunkChunkX86>(symtab, impSym);
   case ARM64:
-    return make<ImportThunkChunkARM64>(symtab.ctx, impSym, ARM64);
+    return make<ImportThunkChunkARM64>(symtab, impSym, ARM64);
   case ARMNT:
-    return make<ImportThunkChunkARM>(symtab.ctx, impSym);
+    return make<ImportThunkChunkARM>(symtab, impSym);
   }
   llvm_unreachable("unknown machine type");
 }
@@ -1211,14 +1211,14 @@ void ImportFile::parse() {
       thunkSym = symtab.addImportThunk(name, impSym, makeImportThunk());
     } else {
       thunkSym = symtab.addImportThunk(
-          name, impSym, make<ImportThunkChunkX64>(symtab.ctx, impSym));
+          name, impSym, make<ImportThunkChunkX64>(symtab, impSym));
 
       if (std::optional<std::string> mangledName =
               getArm64ECMangledFunctionName(name)) {
         StringRef auxThunkName = saver().save(*mangledName);
         auxThunkSym = symtab.addImportThunk(
             auxThunkName, impECSym,
-            make<ImportThunkChunkARM64>(symtab.ctx, impECSym, ARM64EC));
+            make<ImportThunkChunkARM64>(symtab, impECSym, ARM64EC));
       }
 
       StringRef impChkName = saver().save("__impchk_" + name);
