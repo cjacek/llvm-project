@@ -791,12 +791,12 @@ void StringChunk::writeTo(uint8_t *buf) const {
   buf[str.size()] = '\0';
 }
 
-ImportThunkChunk::ImportThunkChunk(COFFLinkerContext &ctx, Defined *s)
-    : NonSectionCodeChunk(ImportThunkKind), live(!ctx.config.doGC),
-      impSymbol(s), ctx(ctx) {}
+ImportThunkChunk::ImportThunkChunk(SymbolTable &symtab, Defined *s)
+    : NonSectionCodeChunk(ImportThunkKind), live(!symtab.ctx.config.doGC),
+      impSymbol(s), symtab(symtab) {}
 
-ImportThunkChunkX64::ImportThunkChunkX64(COFFLinkerContext &ctx, Defined *s)
-    : ImportThunkChunk(ctx, s) {
+ImportThunkChunkX64::ImportThunkChunkX64(SymbolTable &symtab, Defined *s)
+    : ImportThunkChunk(symtab, s) {
   // Intel Optimization Manual says that all branch targets
   // should be 16-byte aligned. MSVC linker does this too.
   setAlignment(16);
@@ -809,13 +809,13 @@ void ImportThunkChunkX64::writeTo(uint8_t *buf) const {
 }
 
 void ImportThunkChunkX86::getBaserels(std::vector<Baserel> *res) {
-  res->emplace_back(getRVA() + 2, ctx.config.machine);
+  res->emplace_back(getRVA() + 2, symtab.machine);
 }
 
 void ImportThunkChunkX86::writeTo(uint8_t *buf) const {
   memcpy(buf, importThunkX86, sizeof(importThunkX86));
   // The first two bytes is a JMP instruction. Fill its operand.
-  write32le(buf + 2, impSymbol->getRVA() + ctx.config.imageBase);
+  write32le(buf + 2, impSymbol->getRVA() + symtab.ctx.config.imageBase);
 }
 
 void ImportThunkChunkARM::getBaserels(std::vector<Baserel> *res) {
@@ -825,7 +825,7 @@ void ImportThunkChunkARM::getBaserels(std::vector<Baserel> *res) {
 void ImportThunkChunkARM::writeTo(uint8_t *buf) const {
   memcpy(buf, importThunkARM, sizeof(importThunkARM));
   // Fix mov.w and mov.t operands.
-  applyMOV32T(buf, impSymbol->getRVA() + ctx.config.imageBase);
+  applyMOV32T(buf, impSymbol->getRVA() + symtab.ctx.config.imageBase);
 }
 
 void ImportThunkChunkARM64::writeTo(uint8_t *buf) const {
@@ -1116,7 +1116,7 @@ void CHPERedirectionChunk::writeTo(uint8_t *buf) const {
 }
 
 ImportThunkChunkARM64EC::ImportThunkChunkARM64EC(ImportFile *file)
-    : ImportThunkChunk(file->symtab.ctx, file->impSym), file(file) {}
+    : ImportThunkChunk(file->symtab, file->impSym), file(file) {}
 
 size_t ImportThunkChunkARM64EC::getSize() const {
   if (!extended)
