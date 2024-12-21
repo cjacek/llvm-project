@@ -79,6 +79,13 @@ public:
   // for U from the symbol table, and if found, set the symbol as
   // a weak alias for U.
   Symbol *findMangle(StringRef name);
+  StringRef mangleMaybe(Symbol *s);
+  bool findUnderscoreMangle(StringRef sym);
+
+  // Symbol names are mangled by prepending "_" on x86.
+  StringRef mangle(StringRef sym);
+
+  StringRef findDefaultEntry();
 
   // Build a set of COFF objects representing the combined contents of
   // BitcodeFiles and add them to the symbol table. Called after all files are
@@ -125,6 +132,9 @@ public:
   llvm::COFF::MachineTypes machine;
 
   bool isEC() const { return machine == ARM64EC; }
+
+  // An entry point symbol.
+  Symbol *entry = nullptr;
 
   // A list of chunks which to be added to .rdata.
   std::vector<Chunk *> localImportChunks;

@@ -172,21 +172,8 @@ static std::future<MBErrPair> createFutureForFile(std::string path) {
   });
 }
 
-// Symbol names are mangled by prepending "_" on x86.
-StringRef LinkerDriver::mangle(StringRef sym) {
-  assert(ctx.config.machine != IMAGE_FILE_MACHINE_UNKNOWN);
-  if (ctx.config.machine == I386)
-    return saver().save("_" + sym);
-  return sym;
-}
-
 llvm::Triple::ArchType LinkerDriver::getArch() {
   return getMachineArchType(ctx.config.machine);
-}
-
-bool LinkerDriver::findUnderscoreMangle(StringRef sym) {
-  Symbol *s = ctx.symtab.findMangle(mangle(sym));
-  return s && !isa<Undefined>(s);
 }
 
 static bool compatibleMachineType(COFFLinkerContext &ctx, MachineTypes mt) {
@@ -486,7 +473,7 @@ void LinkerDriver::parseDirectives(InputFile *file) {
     SmallVector<StringRef, 2> vec;
     e.split(vec, ',');
     for (StringRef sym : vec)
-      excludedSymbols.insert(mangle(sym));
+      excludedSymbols.insert(ctx.symtab.mangle(sym));
   }
 
   // https://docs.microsoft.com/en-us/cpp/preprocessor/comment-c-cpp?view=msvc-160
@@ -505,7 +492,9 @@ void LinkerDriver::parseDirectives(InputFile *file) {
     case OPT_entry:
       if (!arg->getValue()[0])
         Fatal(ctx) << "missing entry point symbol name";
-      ctx.config.entry = file->symtab.addGCRoot(mangle(arg->getValue()), true);
+      ctx.forEachSymtab([&](SymbolTable &symtab) {
+        symtab.entry = symtab.addGCRoot(symtab.mangle(arg->getValue()), true);
+      });
       break;
     case OPT_failifmismatch:
       checkFailIfMismatch(arg->getValue(), file);
@@ -823,54 +812,6 @@ void LinkerDriver::addUndefinedGlob(StringRef arg) {
     ctx.symtab.addGCRoot(sym->getName());
 }
 
-StringRef LinkerDriver::mangleMaybe(Symbol *s) {
-  // If the plain symbol name has already been resolved, do nothing.
-  Undefined *unmangled = dyn_cast<Undefined>(s);
-  if (!unmangled)
-    return "";
-
-  // Otherwise, see if a similar, mangled symbol exists in the symbol table.
-  Symbol *mangled = ctx.symtab.findMangle(unmangled->getName());
-  if (!mangled)
-    return "";
-
-  // If we find a similar mangled symbol, make this an alias to it and return
-  // its name.
-  Log(ctx) << unmangled->getName() << " aliased to " << mangled->getName();
-  unmangled->setWeakAlias(ctx.symtab.addUndefined(mangled->getName()));
-  return mangled->getName();
-}
-
-// Windows specific -- find default entry point name.
-//
-// There are four different entry point functions for Windows executables,
-// each of which corresponds to a user-defined "main" function. This function
-// infers an entry point from a user-defined "main" function.
-StringRef LinkerDriver::findDefaultEntry() {
-  assert(ctx.config.subsystem != IMAGE_SUBSYSTEM_UNKNOWN &&
-         "must handle /subsystem before calling this");
-
-  if (ctx.config.mingw)
-    return mangle(ctx.config.subsystem == IMAGE_SUBSYSTEM_WINDOWS_GUI
-                      ? "WinMainCRTStartup"
-                      : "mainCRTStartup");
-
-  if (ctx.config.subsystem == IMAGE_SUBSYSTEM_WINDOWS_GUI) {
-    if (findUnderscoreMangle("wWinMain")) {
-      if (!findUnderscoreMangle("WinMain"))
-        return mangle("wWinMainCRTStartup");
-      Warn(ctx) << "found both wWinMain and WinMain; using latter";
-    }
-    return mangle("WinMainCRTStartup");
-  }
-  if (findUnderscoreMangle("wmain")) {
-    if (!findUnderscoreMangle("main"))
-      return mangle("wmainCRTStartup");
-    Warn(ctx) << "found both wmain and main; using latter";
-  }
-  return mangle("mainCRTStartup");
-}
-
 WindowsSubsystem LinkerDriver::inferSubsystem() {
   if (ctx.config.dll)
     return IMAGE_SUBSYSTEM_WINDOWS_GUI;
@@ -879,10 +820,10 @@ WindowsSubsystem LinkerDriver::inferSubsystem() {
   // Note that link.exe infers the subsystem from the presence of these
   // functions even if /entry: or /nodefaultlib are passed which causes them
   // to not be called.
-  bool haveMain = findUnderscoreMangle("main");
-  bool haveWMain = findUnderscoreMangle("wmain");
-  bool haveWinMain = findUnderscoreMangle("WinMain");
-  bool haveWWinMain = findUnderscoreMangle("wWinMain");
+  bool haveMain = ctx.symtab.findUnderscoreMangle("main");
+  bool haveWMain = ctx.symtab.findUnderscoreMangle("wmain");
+  bool haveWinMain = ctx.symtab.findUnderscoreMangle("WinMain");
+  bool haveWWinMain = ctx.symtab.findUnderscoreMangle("wWinMain");
   if (haveMain || haveWMain) {
     if (haveWinMain || haveWWinMain) {
       Warn(ctx) << "found " << (haveMain ? "main" : "wmain") << " and "
@@ -1498,8 +1439,9 @@ void LinkerDriver::createECExportThunks() {
     }
   }
 
-  if (ctx.config.entry)
-    maybeCreateECExportThunk(ctx.config.entry->getName(), ctx.config.entry);
+  if (ctx.symtabEC->entry)
+    maybeCreateECExportThunk(ctx.symtabEC->entry->getName(),
+                             ctx.symtabEC->entry);
   for (Export &e : ctx.config.exports) {
     if (!e.data)
       maybeCreateECExportThunk(e.extName.empty() ? e.name : e.extName, e.sym);
@@ -1539,7 +1481,7 @@ void LinkerDriver::maybeExportMinGWSymbols(const opt::InputArgList &args) {
     SmallVector<StringRef, 2> vec;
     StringRef(arg->getValue()).split(vec, ',');
     for (StringRef sym : vec)
-      exporter.addExcludedSymbol(mangle(sym));
+      exporter.addExcludedSymbol(ctx.symtab.mangle(sym));
   }
 
   ctx.symtab.forEachSymbol([&](Symbol *s) {
@@ -2464,31 +2406,32 @@ void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
   }
 
   // Handle /entry and /dll
-  {
+  ctx.forEachSymtab([&](SymbolTable &symtab) {
     llvm::TimeTraceScope timeScope("Entry point");
     if (auto *arg = args.getLastArg(OPT_entry)) {
       if (!arg->getValue()[0])
         Fatal(ctx) << "missing entry point symbol name";
-      config->entry = ctx.symtab.addGCRoot(mangle(arg->getValue()), true);
-    } else if (!config->entry && !config->noEntry) {
+      symtab.entry = symtab.addGCRoot(symtab.mangle(arg->getValue()), true);
+    } else if (!symtab.entry && !config->noEntry) {
       if (args.hasArg(OPT_dll)) {
         StringRef s = (config->machine == I386) ? "__DllMainCRTStartup@12"
                                                 : "_DllMainCRTStartup";
-        config->entry = ctx.symtab.addGCRoot(s, true);
+        symtab.entry = symtab.addGCRoot(s, true);
       } else if (config->driverWdm) {
         // /driver:wdm implies /entry:_NtProcessStartup
-        config->entry = ctx.symtab.addGCRoot(mangle("_NtProcessStartup"), true);
+        symtab.entry =
+            symtab.addGCRoot(symtab.mangle("_NtProcessStartup"), true);
       } else {
         // Windows specific -- If entry point name is not given, we need to
         // infer that from user-defined entry name.
-        StringRef s = findDefaultEntry();
+        StringRef s = symtab.findDefaultEntry();
         if (s.empty())
           Fatal(ctx) << "entry point must be defined";
-        config->entry = ctx.symtab.addGCRoot(s, true);
+        symtab.entry = symtab.addGCRoot(s, true);
         Log(ctx) << "Entry name inferred: " << s;
       }
     }
-  }
+  });
 
   // Handle /delayload
   {
@@ -2571,24 +2514,24 @@ void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
     config->imageBase = getDefaultImageBase();
 
   ctx.forEachSymtab([&](SymbolTable &symtab) {
-    symtab.addSynthetic(mangle("__ImageBase"), nullptr);
+    symtab.addSynthetic(symtab.mangle("__ImageBase"), nullptr);
     if (symtab.machine == I386) {
       symtab.addAbsolute("___safe_se_handler_table", 0);
       symtab.addAbsolute("___safe_se_handler_count", 0);
     }
 
-    symtab.addAbsolute(mangle("__guard_fids_count"), 0);
-    symtab.addAbsolute(mangle("__guard_fids_table"), 0);
-    symtab.addAbsolute(mangle("__guard_flags"), 0);
-    symtab.addAbsolute(mangle("__guard_iat_count"), 0);
-    symtab.addAbsolute(mangle("__guard_iat_table"), 0);
-    symtab.addAbsolute(mangle("__guard_longjmp_count"), 0);
-    symtab.addAbsolute(mangle("__guard_longjmp_table"), 0);
+    symtab.addAbsolute(symtab.mangle("__guard_fids_count"), 0);
+    symtab.addAbsolute(symtab.mangle("__guard_fids_table"), 0);
+    symtab.addAbsolute(symtab.mangle("__guard_flags"), 0);
+    symtab.addAbsolute(symtab.mangle("__guard_iat_count"), 0);
+    symtab.addAbsolute(symtab.mangle("__guard_iat_table"), 0);
+    symtab.addAbsolute(symtab.mangle("__guard_longjmp_count"), 0);
+    symtab.addAbsolute(symtab.mangle("__guard_longjmp_table"), 0);
     // Needed for MSVC 2017 15.5 CRT.
-    symtab.addAbsolute(mangle("__enclave_config"), 0);
+    symtab.addAbsolute(symtab.mangle("__enclave_config"), 0);
     // Needed for MSVC 2019 16.8 CRT.
-    symtab.addAbsolute(mangle("__guard_eh_cont_count"), 0);
-    symtab.addAbsolute(mangle("__guard_eh_cont_table"), 0);
+    symtab.addAbsolute(symtab.mangle("__guard_eh_cont_count"), 0);
+    symtab.addAbsolute(symtab.mangle("__guard_eh_cont_table"), 0);
 
     if (symtab.isEC()) {
       symtab.addAbsolute("__arm64x_extra_rfe_table", 0);
@@ -2609,16 +2552,16 @@ void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
     }
 
     if (config->pseudoRelocs) {
-      symtab.addAbsolute(mangle("__RUNTIME_PSEUDO_RELOC_LIST__"), 0);
-      symtab.addAbsolute(mangle("__RUNTIME_PSEUDO_RELOC_LIST_END__"), 0);
+      symtab.addAbsolute(symtab.mangle("__RUNTIME_PSEUDO_RELOC_LIST__"), 0);
+      symtab.addAbsolute(symtab.mangle("__RUNTIME_PSEUDO_RELOC_LIST_END__"), 0);
     }
     if (config->mingw) {
-      symtab.addAbsolute(mangle("__CTOR_LIST__"), 0);
-      symtab.addAbsolute(mangle("__DTOR_LIST__"), 0);
+      symtab.addAbsolute(symtab.mangle("__CTOR_LIST__"), 0);
+      symtab.addAbsolute(symtab.mangle("__DTOR_LIST__"), 0);
     }
     if (config->debug || config->buildIDHash != BuildIDHash::None)
       if (symtab.findUnderscore("__buildid"))
-        symtab.addUndefined(mangle("__buildid"));
+        symtab.addUndefined(symtab.mangle("__buildid"));
   });
 
   // This code may add new undefined symbols to the link, which may enqueue more
@@ -2627,10 +2570,12 @@ void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
   {
     llvm::TimeTraceScope timeScope("Add unresolved symbols");
     do {
-      // Windows specific -- if entry point is not found,
-      // search for its mangled names.
-      if (config->entry)
-        mangleMaybe(config->entry);
+      ctx.forEachSymtab([&](SymbolTable &symtab) {
+        // Windows specific -- if entry point is not found,
+        // search for its mangled names.
+        if (symtab.entry)
+          symtab.mangleMaybe(symtab.entry);
+      });
 
       // Windows specific -- Make sure we resolve all dllexported symbols.
       for (Export &e : config->exports) {
@@ -2638,7 +2583,7 @@ void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
           continue;
         e.sym = ctx.symtab.addGCRoot(e.name, !e.data);
         if (e.source != ExportSource::Directives)
-          e.symbolName = mangleMaybe(e.sym);
+          e.symbolName = ctx.symtab.mangleMaybe(e.sym);
       }
 
       // Add weak aliases. Weak aliases is a mechanism to give remaining
@@ -2678,7 +2623,7 @@ void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
 
       // Windows specific -- if __load_config_used can be resolved, resolve it.
       if (ctx.symtab.findUnderscore("_load_config_used"))
-        ctx.symtab.addGCRoot(mangle("_load_config_used"));
+        ctx.symtab.addGCRoot(ctx.symtab.mangle("_load_config_used"));
 
       if (args.hasArg(OPT_include_optional)) {
         // Handle /includeoptional
