@@ -2352,6 +2352,18 @@ void Writer::setECSymbols() {
       delayIatCopySym, "__hybrid_auxiliary_delayload_iat_copy",
       delayIdata.getAuxIatCopy().empty() ? nullptr
                                          : delayIdata.getAuxIatCopy().front());
+
+  if (!ctx.hybridSymtab)
+    return;
+
+  Symbol *sym = symtab->findUnderscore("__arm64x_native_entrypoint");
+  if (auto altEntrySym = dyn_cast_or_null<Defined>(ctx.hybridSymtab->entry)) {
+    if (auto thunkChunk = dyn_cast<ECExportThunkChunk>(altEntrySym->getChunk()))
+      altEntrySym = thunkChunk->target;
+    replaceSymbol<DefinedAbsolute>(sym, ctx, "__arm64x_native_entrypoint",
+                                   ctx.config.imageBase +
+                                       altEntrySym->getRVA());
+  }
 }
 
 // Write section contents to a mmap'ed file.
@@ -2594,6 +2606,14 @@ void Writer::createDynamicRelocs() {
                            peHeaderOffset +
                                offsetof(pe32plus_header, AddressOfEntryPoint),
                            entrySym);
+
+    Symbol *s = ctx.hybridSymtab->findUnderscore("__chpe_metadata");
+    if (auto sym = dyn_cast_or_null<DefinedRegular>(s)) {
+      ctx.dynamicRelocs->add(
+          IMAGE_DVRT_ARM64X_FIXUP_TYPE_VALUE, sizeof(uint32_t),
+          Arm64XRelocVal(sym, offsetof(chpe_metadata, AlternateEntryPoint)),
+          cast_or_null<Defined>(ctx.symtab.entry));
+    }
   }
 
   // Set the hybrid load config to the EC load config.

@@ -34,10 +34,12 @@ DISASM-NEXT: 180003009: e9 f2 ef ff ff               jmp     0x180002000 <.text+
 DISASM-NEXT: 18000300e: cc                           int3
 DISASM-NEXT: 18000300f: cc                           int3
 
-RUN: llvm-readobj --headers out.dll | FileCheck --check-prefix=READOBJ %s
+RUN: llvm-readobj --headers --coff-load-config out.dll | FileCheck --check-prefix=READOBJ %s
 READOBJ: AddressOfEntryPoint: 0x1000
+READOBJ: AlternateEntryPoint: 0x2000
 READOBJ: HybridObject {
 READOBJ:   AddressOfEntryPoint: 0x3000
+READOBJ:   AlternateEntryPoint: 0x1000
 READOBJ: }
 
 RUN: lld-link -machine:arm64x -dll -out:out2.dll arm64ec-func.obj arm64-func.obj \
