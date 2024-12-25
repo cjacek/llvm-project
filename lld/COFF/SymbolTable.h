@@ -152,6 +152,11 @@ public:
   uint32_t loadConfigSize = 0;
   void initializeLoadConfig();
 
+  std::vector<Export> exports;
+
+  void fixupExports();
+  void assignExportOrdinals();
+
 private:
   /// Given a name without "__imp_" prefix, returns a defined symbol
   /// with the "__imp_" prefix, if it exists.

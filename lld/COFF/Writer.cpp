@@ -1323,9 +1323,9 @@ void Writer::createExportTable() {
     // of having the linker synthesize the tables.
     if (ctx.config.hadExplicitExports)
       Warn(ctx) << "literal .edata sections override exports";
-  } else if (!ctx.config.exports.empty()) {
+  } else if (!ctx.symtab.exports.empty()) {
     std::vector<Chunk *> chunks;
-    createEdataContents(ctx, chunks);
+    createEdataContents(ctx.symtab, chunks);
     for (Chunk *c : chunks)
       edataSec->addChunk(c);
   }
@@ -1334,7 +1334,7 @@ void Writer::createExportTable() {
     edataEnd = edataSec->chunks.back();
   }
   // Warn on exported deleting destructor.
-  for (auto e : ctx.config.exports)
+  for (auto e : ctx.symtab.exports)
     if (e.sym && e.sym->getName().starts_with("??_G"))
       Warn(ctx) << "export of deleting dtor: " << e.sym;
 }
@@ -2035,11 +2035,11 @@ void Writer::createGuardCFTables() {
   ctx.forEachSymtab([&](SymbolTable &symtab) {
     if (symtab.entry)
       maybeAddAddressTakenFunction(addressTakenSyms, symtab.entry);
-  });
 
-  // Mark exported symbols in executable sections as address-taken.
-  for (Export &e : config->exports)
-    maybeAddAddressTakenFunction(addressTakenSyms, e.sym);
+    // Mark exported symbols in executable sections as address-taken.
+    for (Export &e : symtab.exports)
+      maybeAddAddressTakenFunction(addressTakenSyms, e.sym);
+  });
 
   // For each entry in the .giats table, check if it has a corresponding load
   // thunk (e.g. because the DLL that defines it will be delay-loaded) and, if

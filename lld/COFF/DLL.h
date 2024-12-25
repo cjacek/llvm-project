@@ -78,7 +78,7 @@ private:
 };
 
 // Create all chunks for the DLL export table.
-void createEdataContents(COFFLinkerContext &ctx, std::vector<Chunk *> &chunks);
+void createEdataContents(SymbolTable &symtab, std::vector<Chunk *> &chunks);
 
 } // namespace lld::coff
 
