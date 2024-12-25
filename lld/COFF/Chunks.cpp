@@ -1167,7 +1167,7 @@ uint32_t ImportThunkChunkARM64EC::extendRanges() {
 }
 
 uint64_t Arm64XRelocVal::get() const {
-  return (sym ? sym->getRVA() : 0) + value;
+  return (sym ? sym->getRVA() : 0) + (chunk ? chunk->getRVA() : 0) + value;
 }
 
 size_t Arm64XDynamicRelocEntry::getSize() const {
@@ -1228,6 +1228,17 @@ void DynamicRelocsChunk::finalize() {
   }
 
   size = alignTo(size, sizeof(uint32_t));
+}
+
+void DynamicRelocsChunk::set(uint32_t rva, Arm64XRelocVal value) {
+  for (Arm64XDynamicRelocEntry &entry : arm64xRelocs) {
+    if (entry.offset.get() != rva)
+      continue;
+    assert(!entry.value.get());
+    entry.value = value;
+    return;
+  }
+  llvm_unreachable("reloc not found");
 }
 
 void DynamicRelocsChunk::writeTo(uint8_t *buf) const {
