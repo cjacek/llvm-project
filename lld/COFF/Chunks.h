@@ -840,10 +840,15 @@ class Arm64XRelocVal {
 public:
   Arm64XRelocVal(int64_t value = 0) : value(value) {}
   Arm64XRelocVal(Defined *sym, int32_t offset = 0) : sym(sym), value(offset) {}
+  Arm64XRelocVal(Chunk *chunk, int32_t offset = 0)
+      : chunk(chunk), value(offset) {}
+  bool isRelative() const { return sym || chunk; }
+  void set(uint64_t v) { value = v; }
   uint64_t get() const;
 
 private:
   Defined *sym = nullptr;
+  Chunk *chunk = nullptr;
   uint64_t value;
 };
 
@@ -877,6 +882,13 @@ public:
            Arm64XRelocVal offset, Arm64XRelocVal value) {
     arm64xRelocs.emplace_back(type, size, offset, value);
   }
+
+  void add(llvm::COFF::Arm64XFixupType type, uint8_t size,
+           Arm64XRelocVal offset) {
+    add(type, size, offset, lld::coff::Arm64XRelocVal());
+  }
+
+  void set(uint32_t rva, uint64_t value);
 
 private:
   std::vector<Arm64XDynamicRelocEntry> arm64xRelocs;

@@ -2364,6 +2364,13 @@ void Writer::setECSymbols() {
                                    ctx.config.imageBase +
                                        altEntrySym->getRVA());
   }
+
+  if (hybridPdata.first)
+    ctx.dynamicRelocs->set(
+        dataDirOffset64 + EXCEPTION_TABLE * sizeof(data_directory) +
+            offsetof(data_directory, Size),
+        hybridPdata.last->getRVA() - hybridPdata.first->getRVA() +
+            hybridPdata.last->getSize());
 }
 
 // Write section contents to a mmap'ed file.
@@ -2614,6 +2621,19 @@ void Writer::createDynamicRelocs() {
           Arm64XRelocVal(sym, offsetof(chpe_metadata, AlternateEntryPoint)),
           cast_or_null<Defined>(ctx.symtab.entry));
     }
+  }
+
+  if (pdata.first || hybridPdata.first) {
+    ctx.dynamicRelocs->add(IMAGE_DVRT_ARM64X_FIXUP_TYPE_VALUE, sizeof(uint32_t),
+                           dataDirOffset64 +
+                               EXCEPTION_TABLE * sizeof(data_directory) +
+                               offsetof(data_directory, RelativeVirtualAddress),
+                           Arm64XRelocVal(hybridPdata.first));
+    ctx.dynamicRelocs->add(IMAGE_DVRT_ARM64X_FIXUP_TYPE_VALUE, sizeof(uint32_t),
+                           dataDirOffset64 +
+                               EXCEPTION_TABLE * sizeof(data_directory) +
+                               offsetof(data_directory, Size),
+                           Arm64XRelocVal());
   }
 
   // Set the hybrid load config to the EC load config.
