@@ -75,6 +75,9 @@ public:
     return c->osidx == 0 ? nullptr : outputSections[c->osidx - 1];
   }
 
+  // Returns a list of chunks of selected symbols.
+  std::vector<Chunk *> getChunks() const;
+
   // Fake sections for parsing bitcode files.
   FakeSection ltoTextSection;
   FakeSection ltoDataSection;

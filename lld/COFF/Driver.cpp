@@ -1137,7 +1137,7 @@ void LinkerDriver::parseOrderFile(StringRef arg) {
 
   // Get a list of all comdat sections for error checking.
   DenseSet<StringRef> set;
-  for (Chunk *c : ctx.symtab.getChunks())
+  for (Chunk *c : ctx.getChunks())
     if (auto *sec = dyn_cast<SectionChunk>(c))
       if (sec->sym)
         set.insert(sec->sym->getName());
