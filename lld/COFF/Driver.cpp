@@ -2288,6 +2288,10 @@ void LinkerDriver::linkerMain(ArrayRef<const char *> argsArr) {
     // parseModuleDefs mutates Config object.
     mainSymtab.parseModuleDefs(arg->getValue());
   }
+  if (ctx.hybridSymtab) {
+    if (auto *arg = args.getLastArg(OPT_defarm64native))
+      ctx.symtab.parseModuleDefs(arg->getValue());
+  }
 
   // Handle generation of import library from a def file.
   if (!args.hasArg(OPT_INPUT, OPT_wholearchive_file)) {

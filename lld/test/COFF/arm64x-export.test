@@ -107,6 +107,12 @@ EXPORTS-NATIVE-NEXT:   ExportTableSize: 0x0
 EXPORTS-NATIVE-NOT:    Name: func
 
 
+RUN: lld-link -machine:arm64x -dll -out:out-def-native.dll arm64ec-func.obj arm64-func.obj \
+RUN:          loadconfig-arm64.obj loadconfig-arm64ec.obj -defArm64Native:func.def -noentry
+RUN: llvm-objdump -d out-def-native.dll | FileCheck --check-prefix=DISASM-NATIVE %s
+RUN: llvm-readobj --headers --coff-exports out-def-native.dll | FileCheck --check-prefix=EXPORTS-NATIVE %s
+
+
 RUN: lld-link -machine:arm64x -dll -out:out-edata.dll arm64ec-func.obj arm64-func.obj \
 RUN:          loadconfig-arm64.obj loadconfig-arm64ec.obj arm64-edata.obj -noentry
 RUN: llvm-objdump -d out-edata.dll | FileCheck --check-prefix=DISASM-NATIVE %s
@@ -154,6 +160,12 @@ EXPORTS-BOTH-NEXT:     Name: func
 EXPORTS-BOTH-NEXT:     RVA: 0x3000
 EXPORTS-BOTH-NEXT:   }
 EXPORTS-BOTH-NEXT: }
+
+
+RUN: lld-link -machine:arm64x -dll -out:out-def-both.dll arm64ec-func.obj arm64-func.obj \
+RUN:          loadconfig-arm64.obj loadconfig-arm64ec.obj -def:func.def -defArm64Native:func.def -noentry
+RUN: llvm-objdump -d out-def-both.dll | FileCheck --check-prefix=DISASM-BOTH %s
+RUN: llvm-readobj --headers --coff-exports out-def-both.dll | FileCheck --check-prefix=EXPORTS-BOTH %s
 
 
 RUN: lld-link -machine:arm64x -dll -out:out-edata-both.dll arm64ec-func.obj arm64-func.obj \
