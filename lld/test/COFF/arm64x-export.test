@@ -54,6 +54,12 @@ RUN: llvm-objdump -d out-drectve-ec.dll | FileCheck --check-prefix=DISASM-EC %s
 RUN: llvm-readobj --headers --coff-exports out-drectve-ec.dll | FileCheck --check-prefix=EXPORTS-EC %s
 
 
+RUN: lld-link -machine:arm64x -dll -out:out-def-ec.dll arm64ec-func.obj arm64-func.obj \
+RUN:          loadconfig-arm64.obj loadconfig-arm64ec.obj -def:func.def -noentry
+RUN: llvm-objdump -d out-def-ec.dll | FileCheck --check-prefix=DISASM-EC %s
+RUN: llvm-readobj --headers --coff-exports out-def-ec.dll | FileCheck --check-prefix=EXPORTS-EC %s
+
+
 RUN: lld-link -machine:arm64x -dll -out:out-edata-ec.dll arm64ec-func.obj arm64-func.obj \
 RUN:          loadconfig-arm64.obj loadconfig-arm64ec.obj arm64ec-edata.obj -noentry
 
@@ -220,3 +226,8 @@ funcname_func:
 
 name:
     .asciz "out-edata.dll"
+
+#--- func.def
+LIBRARY out.dll
+EXPORTS
+        func
