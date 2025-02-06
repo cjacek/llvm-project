@@ -7,6 +7,7 @@
 ; RUN: llc < %s -mtriple=x86_64-fuchsia -mcpu=core2 -enable-unsafe-fp-math | FileCheck %s --check-prefix=GNU_SINCOS_FASTMATH
 ; RUN: llc < %s -mtriple=x86_64-scei-ps4 -mcpu=btver2 | FileCheck %s --check-prefix=PS4_SINCOS
 ; RUN: llc < %s -mtriple=x86_64-sie-ps5  -mcpu=znver2 | FileCheck %s --check-prefix=PS4_SINCOS
+; RUN: llc < %s -mtriple=x86_64-windows-gnu -mcpu=core2 | FileCheck %s --check-prefix=MINGW_NOOPT
 
 ; Combine sin / cos into a single call unless they may write errno (as
 ; captured by readnone attrbiute, controlled by clang -fmath-errno
@@ -35,6 +36,10 @@ entry:
 ; OSX_NOOPT: callq _sinf
 ; OSX_NOOPT: callq _cosf
 
+; MINGW_NOOPT-LABEL: test1:
+; MINGW_NOOPT: callq sinf
+; MINGW_NOOPT: callq cosf
+
 ; PS4_SINCOS-LABEL: test1:
 ; PS4_SINCOS: callq sincosf
 ; PS4_SINCOS: vmovss 4(%rsp), %xmm0
@@ -62,6 +67,10 @@ entry:
 ; OSX_NOOPT-LABEL: test1_errno:
 ; OSX_NOOPT: callq _sinf
 ; OSX_NOOPT: callq _cosf
+
+; MINGW_NOOPT-LABEL: test1_errno:
+; MINGW_NOOPT: callq sinf
+; MINGW_NOOPT: callq cosf
 
 ; PS4_SINCOS-LABEL: test1_errno:
 ; PS4_SINCOS: callq sinf
@@ -92,6 +101,10 @@ entry:
 ; OSX_NOOPT: callq _sin
 ; OSX_NOOPT: callq _cos
 
+; MINGW_NOOPT-LABEL: test2:
+; MINGW_NOOPT: callq sin
+; MINGW_NOOPT: callq cos
+
 ; PS4_SINCOS-LABEL: test2:
 ; PS4_SINCOS: callq sincos
 ; PS4_SINCOS: vmovsd 16(%rsp), %xmm0
@@ -119,6 +132,10 @@ entry:
 ; OSX_NOOPT-LABEL: test2_errno:
 ; OSX_NOOPT: callq _sin
 ; OSX_NOOPT: callq _cos
+
+; MINGW_NOOPT-LABEL: test2_errno:
+; MINGW_NOOPT: callq sin
+; MINGW_NOOPT: callq cos
 
 ; PS4_SINCOS-LABEL: test2_errno:
 ; PS4_SINCOS: callq sin
