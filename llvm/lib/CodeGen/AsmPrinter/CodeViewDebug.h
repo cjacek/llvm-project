@@ -99,7 +99,7 @@ private:
   codeview::CPUType TheCPU;
 
   /// Whether to emit compiler information only.
-  bool OnlyCompilerInfo = false;
+  AsmPrinter *CompilerInfoAsm = nullptr;
 
   static LocalVarDef createDefRangeMem(uint16_t CVRegister, int Offset);
 

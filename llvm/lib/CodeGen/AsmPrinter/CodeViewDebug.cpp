@@ -617,6 +617,7 @@ void CodeViewDebug::beginModule(Module *M) {
     return;
   }
 
+  CompilerInfoAsm = Asm;
   TheCPU = mapArchToCVCPUType(M->getTargetTriple().getArch());
 
   // Get the current source language.
@@ -632,10 +633,10 @@ void CodeViewDebug::beginModule(Module *M) {
   const auto *CU = cast<DICompileUnit>(Node);
 
   CurrentSourceLanguage = MapDWLangToCVLang(CU->getSourceLanguage());
-  OnlyCompilerInfo =
-      !M->getCodeViewFlag() || CU->getEmissionKind() == DICompileUnit::NoDebug;
-  if (OnlyCompilerInfo)
+  if (!M->getCodeViewFlag() || CU->getEmissionKind() == DICompileUnit::NoDebug) {
+    Asm = nullptr;
     return;
+  }
 
   collectGlobalVariableInfo();
 
@@ -646,7 +647,7 @@ void CodeViewDebug::beginModule(Module *M) {
 }
 
 void CodeViewDebug::endModule() {
-  if (!Asm)
+  if (!CompilerInfoAsm)
     return;
 
   // The COFF .debug$S section consists of several subsections, each starting
@@ -662,7 +663,7 @@ void CodeViewDebug::endModule() {
   emitObjName();
   emitCompilerInformation();
   endCVSubsection(CompilerInfo);
-  if (OnlyCompilerInfo)
+  if (!Asm)
     return;
 
   emitInlineeLinesSubsection();
@@ -800,7 +801,7 @@ void CodeViewDebug::emitTypeGlobalHashes() {
 void CodeViewDebug::emitObjName() {
   MCSymbol *CompilerEnd = beginSymbolRecord(SymbolKind::S_OBJNAME);
 
-  StringRef PathRef(Asm->TM.Options.ObjectFilenameForDebug);
+  StringRef PathRef(CompilerInfoAsm->TM.Options.ObjectFilenameForDebug);
   llvm::SmallString<256> PathStore(PathRef);
 
   if (PathRef.empty() || PathRef == "-") {
@@ -858,7 +859,7 @@ void CodeViewDebug::emitCompilerInformation() {
   }
   using ArchType = llvm::Triple::ArchType;
   ArchType Arch = MMI->getModule()->getTargetTriple().getArch();
-  if (Asm->TM.Options.Hotpatch || Arch == ArchType::thumb ||
+  if (CompilerInfoAsm->TM.Options.Hotpatch || Arch == ArchType::thumb ||
       Arch == ArchType::aarch64) {
     Flags |= static_cast<uint32_t>(CompileSym3Flags::HotPatch);
   }
@@ -1027,7 +1028,7 @@ void CodeViewDebug::switchToDebugSectionForSymbol(const MCSymbol *GVSym) {
   const MCSymbol *KeySym = GVSec ? GVSec->getCOMDATSymbol() : nullptr;
 
   MCSectionCOFF *DebugSec = cast<MCSectionCOFF>(
-      Asm->getObjFileLowering().getCOFFDebugSymbolsSection());
+      CompilerInfoAsm->getObjFileLowering().getCOFFDebugSymbolsSection());
   DebugSec = OS.getContext().getAssociativeCOFFSection(DebugSec, KeySym);
 
   OS.switchSection(DebugSec);
@@ -1452,9 +1453,6 @@ void CodeViewDebug::collectVariableInfo(const DISubprogram *SP) {
 }
 
 void CodeViewDebug::beginFunctionImpl(const MachineFunction *MF) {
-  if (OnlyCompilerInfo)
-    return;
-
   const TargetSubtargetInfo &TSI = MF->getSubtarget();
   const TargetRegisterInfo *TRI = TSI.getRegisterInfo();
   const MachineFrameInfo &MFI = MF->getFrameInfo();
@@ -3046,9 +3044,6 @@ void CodeViewDebug::collectLexicalBlockInfo(
 }
 
 void CodeViewDebug::endFunctionImpl(const MachineFunction *MF) {
-  if (OnlyCompilerInfo)
-    return;
-
   const Function &GV = MF->getFunction();
   assert(FnDebugInfo.count(&GV));
   assert(CurFn == FnDebugInfo[&GV].get());
@@ -3107,8 +3102,6 @@ static bool isUsableDebugLoc(DebugLoc DL) {
 
 void CodeViewDebug::beginInstruction(const MachineInstr *MI) {
   DebugHandlerBase::beginInstruction(MI);
-  if (OnlyCompilerInfo)
-    return;
 
   // Ignore DBG_VALUE and DBG_LABEL locations and function prologue.
   if (!Asm || !CurFn || MI->isDebugInstr() ||
