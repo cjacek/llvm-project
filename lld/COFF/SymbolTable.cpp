@@ -1364,47 +1364,72 @@ void SymbolTable::parseAlternateName(StringRef s) {
   if (from.empty() || to.empty())
     Fatal(ctx) << "/alternatename: invalid argument: " << s;
   auto it = alternateNames.find(from);
-  if (it != alternateNames.end() && it->second != to)
-    Fatal(ctx) << "/alternatename: conflicts: " << s;
-  alternateNames.insert(it, std::make_pair(from, to));
+  if (it != alternateNames.end()) {
+    if (it->second != to)
+      Fatal(ctx) << "/alternatename: conflicts: " << s;
+    return;
+  }
+  alternateNames.insert(std::make_pair(from, to));
 }
 
 void SymbolTable::resolveAlternateNames() {
   // Add weak aliases. Weak aliases is a mechanism to give remaining
   // undefined symbols final chance to be resolved successfully.
-  for (auto pair : alternateNames) {
-    StringRef from = pair.first;
-    StringRef to = pair.second;
-    Symbol *sym = find(from);
-    if (!sym)
-      continue;
-    if (auto *u = dyn_cast<Undefined>(sym)) {
+  bool found = false;
+  do {
+    found = false;
+    alternateNames.remove_if([&](const auto &pair) {
+      StringRef from = pair.first;
+      StringRef to = pair.second;
+      Symbol *sym = find(from);
+      if (!sym)
+        return false;
+      auto *u = dyn_cast<Undefined>(sym);
+      if (!u)
+        return true;
+
       if (u->weakAlias) {
         // On ARM64EC, anti-dependency aliases are treated as undefined
         // symbols unless a demangled symbol aliases a defined one, which
         // is part of the implementation.
         if (!isEC() || !u->isAntiDep)
-          continue;
+          return true;
         if (!isa<Undefined>(u->weakAlias) &&
             !isArm64ECMangledFunctionName(u->getName()))
-          continue;
+          return true;
       }
 
       // Check if the destination symbol is defined. If not, skip it.
       // It may still be resolved later if more input files are added.
       // Also skip anti-dependency targets, as they can't be chained anyway.
+      auto isUndef = [](Symbol *s) {
+        auto toUndef = dyn_cast<Undefined>(s);
+        return toUndef && (!toUndef->weakAlias || toUndef->isAntiDep);
+      };
       Symbol *toSym = find(to);
-      if (!toSym)
-        continue;
-      auto toUndef = dyn_cast<Undefined>(toSym);
-      if (toUndef && (!toUndef->weakAlias || toUndef->isAntiDep))
-        continue;
+      if (!toSym) {
+        // MSVC link.exe supports chaining of up to two alternate names.
+        // Check for that here: if the middle symbol in the chain does not
+        // exist, create it.
+        auto chainAlt = alternateNames.find(to);
+        if (chainAlt != alternateNames.end())
+          toSym = find(chainAlt->second);
+        if (!toSym || isUndef(toSym))
+          return false;
+        u->setWeakAlias(addUndefined(to));
+        found = true;
+        return true;
+      }
+      if (isUndef(toSym))
+        return false;
       toSym->isUsedInRegularObj = true;
       if (toSym->isLazy())
         forceLazy(toSym);
       u->setWeakAlias(toSym);
-    }
-  }
+      found = true;
+      return true;
+    });
+  } while (found);
 }
 
 // Parses /aligncomm option argument.

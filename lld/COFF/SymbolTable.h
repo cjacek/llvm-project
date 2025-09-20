@@ -178,7 +178,7 @@ public:
   std::vector<WrappedSymbol> wrapped;
 
   // Used for /alternatename.
-  std::map<StringRef, StringRef> alternateNames;
+  llvm::MapVector<StringRef, StringRef> alternateNames;
 
   // Used for /aligncomm.
   std::map<std::string, int> alignComm;
