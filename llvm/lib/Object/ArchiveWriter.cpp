@@ -1119,6 +1119,10 @@ Error writeArchiveToStream(raw_ostream &Out,
     // to switch to 64-bit. Note that the file can be larger than 4GB as long as
     // the last member starts before the 4GB offset.
     if (*HeadersSize + LastMemberHeaderOffset >= Sym64Threshold) {
+      if (Kind == object::Archive::K_COFF)
+        return writeArchiveToStream(Out, NewMembers, WriteSymtab,
+                                    object::Archive::K_GNU64, Deterministic,
+                                    Thin, IsEC, Warn);
       if (Kind == object::Archive::K_DARWIN)
         Kind = object::Archive::K_DARWIN64;
       else
