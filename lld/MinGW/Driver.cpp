@@ -437,6 +437,7 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
     add("-opt:noicf");
   }
 
+  bool isArm64X = false;
   if (auto *a = args.getLastArg(OPT_m)) {
     StringRef s = a->getValue();
     if (s == "i386pe")
@@ -449,9 +450,10 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
       add("-machine:arm64");
     else if (s == "arm64ecpe")
       add("-machine:arm64ec");
-    else if (s == "arm64xpe")
+    else if (s == "arm64xpe") {
       add("-machine:arm64x");
-    else if (s == "mipspe")
+      isArm64X = true;
+    } else if (s == "mipspe")
       add("-machine:mips");
     else
       error("unknown parameter: -m" + s);
@@ -573,10 +575,13 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   for (auto *a : args) {
     switch (a->getOption().getID()) {
     case OPT_INPUT:
-      if (StringRef(a->getValue()).ends_with_insensitive(".def"))
+      if (StringRef(a->getValue()).ends_with_insensitive(".def")) {
         add("-def:" + StringRef(a->getValue()));
-      else
+        if (isArm64X)
+          add("-defarm64native:" + StringRef(a->getValue()));
+      } else {
         add(prefix + StringRef(a->getValue()));
+      }
       break;
     case OPT_l:
       add(prefix +
