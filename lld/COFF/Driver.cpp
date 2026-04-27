@@ -446,6 +446,18 @@ void LinkerDriver::addArchiveBuffer(MemoryBufferRef mb, StringRef symName,
     Err(ctx) << mb.getBufferIdentifier()
              << ": is not a native COFF file. Recompile without /GL?";
     return;
+  } else if (magic == file_magic::archive) {
+    std::unique_ptr<Archive> file =
+        CHECK(Archive::create(mb), "failed to parse archive");
+    Archive *archive = file.get();
+    int memberIndex = 0;
+    for (MemoryBufferRef m : getArchiveMembers(ctx, archive)) {
+      if (!archive->isThin())
+        addArchiveBuffer(m, "<whole-archive>", "filename", memberIndex++, lazy);
+      else
+        addThinArchiveBuffer(m, "<whole-archive>", lazy);
+    }
+    return;
   } else {
     Err(ctx) << "unknown file type: " << mb.getBufferIdentifier();
     return;
