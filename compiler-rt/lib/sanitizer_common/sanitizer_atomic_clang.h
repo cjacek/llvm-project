@@ -41,7 +41,7 @@ inline void atomic_thread_fence(memory_order mo) { __atomic_thread_fence(mo); }
 
 inline void proc_yield(int cnt) {
   __asm__ __volatile__("" ::: "memory");
-#if defined(__i386__) || defined(__x86_64__)
+#if defined(__i386__) || (defined(__x86_64__) && !defined(__arm64ec__))
   for (int i = 0; i < cnt; i++) __asm__ __volatile__("pause");
   __asm__ __volatile__("" ::: "memory");
 #endif
