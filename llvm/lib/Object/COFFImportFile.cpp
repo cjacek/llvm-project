@@ -108,11 +108,19 @@ Error COFFImportFile::printSymbolName(raw_ostream &OS, DataRefImpl Symb) const {
     break;
   }
   const char *Name = Data.getBufferStart() + sizeof(coff_import_header);
-  if (Symb.p != ECThunkSymbol && COFF::isArm64EC(getMachine())) {
-    if (std::optional<std::string> DemangledName =
-            getArm64ECDemangledFunctionName(Name)) {
-      OS << StringRef(*DemangledName);
-      return Error::success();
+  if (COFF::isArm64EC(getMachine())) {
+    if (Symb.p != ECThunkSymbol) {
+      if (std::optional<std::string> DemangledName =
+              getArm64ECDemangledFunctionName(Name)) {
+        OS << StringRef(*DemangledName);
+        return Error::success();
+      }
+    } else {
+      if (std::optional<std::string> MangledName =
+              getArm64ECMangledFunctionName(Name)) {
+        OS << StringRef(*MangledName);
+        return Error::success();
+      }
     }
   }
   OS << StringRef(Name);
